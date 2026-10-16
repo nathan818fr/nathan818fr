@@ -1,0 +1,9 @@
+[tools]
+jq = "1"
+yq = "4"
+shellcheck = "0.11"
+shfmt = "3"
+
+[tasks.check]
+description = "Lint (offline), then compare profile.yaml with the public GitHub repos"
+run = ["mise run lint", "mise run unlisted"]

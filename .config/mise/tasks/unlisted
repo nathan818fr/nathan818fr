@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s inherit_errexit
+#MISE description="Compare profile.yaml with the public GitHub repos of nathan818fr (forks left out)"
+#USAGE flag "--forks" help="also list your forks"
+# shellcheck source=../lib/common.bash
+source -- "$(dirname -- "$0")/../lib/common.bash"
+
+# Whose repos to look at, and where GitHub lists them (no token needed: one request per 100 repos)
+OWNER='nathan818fr'
+REPOS_URL="https://api.github.com/users/${OWNER}/repos?type=owner&per_page=100"
+
+function main() {
+  local _json _repos
+  local -a _unlisted=() _gone=() _archived=()
+  if ! check_profile; then return 1; fi
+  if ! _json="$(profile_json)"; then return 1; fi
+  if ! _repos="$(public_repos)"; then
+    echo "error: could not list the repos of ${OWNER} from api.github.com (rate limit: 60 requests an hour)" >&2
+    return 1
+  fi
+  if ! unlisted_repos _unlisted "$_json" "$_repos" "${usage_forks:-false}"; then return 1; fi
+  if ! gone_repos _gone "$_json" "$_repos"; then return 1; fi
+  if ! archived_in_plain_groups _archived "$_json" "$_repos"; then return 1; fi
+
+  report 'Public repos not in profile.yaml (add them to projects, or to ignored):' "${_unlisted[@]}"
+  report "Listed in profile.yaml but not among the public repos of ${OWNER} (renamed, deleted or private?):" "${_gone[@]}"
+  report 'Archived, but in a group that is not folded:' "${_archived[@]}"
+  if [[ "$((${#_unlisted[@]} + ${#_gone[@]} + ${#_archived[@]}))" != '0' ]]; then return 1; fi
+  echo 'profile.yaml lists all your public repos.'
+}
+
+### Steps
+
+# Print the owner's public repos as a JSON array of {name, url, fork, archived}, every page
+function public_repos() {
+  local _page=1 _batch _count _all='[]'
+  while true; do
+    # Only these fields, as the full answer is too big for jq --argjson
+    if ! _batch="$(curl -fsSL -H 'Accept: application/vnd.github+json' -- "${REPOS_URL}&page=${_page}" |
+      jq -c 'map({name, url: .html_url, fork, archived})')"; then
+      return 1
+    fi
+    if ! _all="$(jq -c --argjson batch "$_batch" '. + $batch' <<<"$_all")"; then return 1; fi
+    if ! _count="$(jq 'length' <<<"$_batch")"; then return 1; fi
+    if [[ "$_count" != '100' ]]; then break; fi
+    _page="$((_page + 1))"
+  done
+  printf '%s\n' "$_all"
+}
+
+# Fill the array named $1 with the public repos ($3) that profile.yaml ($2) doesn't mention, forks too if $4 is 'true'
+function unlisted_repos() {
+  # shellcheck disable=SC2016 # a jq program: shellcheck can't tell through capture_lines
+  capture_lines "$1" jq -r -L "$LIB_DIR" --argjson repos "$3" --argjson forks "$4" --arg profile "$OWNER" \
+    'include "profile"; (listed_urls | map(url_key)) as $listed
+    | $repos[] | select(.name != $profile and ($forks or (.fork | not)) and (.url | url_key | IN($listed[]) | not))
+    | "\(.name)\(if .archived then " (archived)" else "" end)\(if .fork then " (fork)" else "" end)  \(.url)"' <<<"$2"
+}
+
+# Fill the array named $1 with the URLs of profile.yaml ($2) under github.com/<owner>/ that are not public repos ($3)
+function gone_repos() {
+  # shellcheck disable=SC2016 # a jq program: shellcheck can't tell through capture_lines
+  capture_lines "$1" jq -r -L "$LIB_DIR" --argjson repos "$3" --arg prefix "https://github.com/${OWNER}/" \
+    'include "profile"; ($repos | map(.url | url_key)) as $public
+    | listed_urls[] | select(url_key | startswith($prefix | ascii_downcase))
+    | select(url_key | IN($public[]) | not)' <<<"$2"
+}
+
+# Fill the array named $1 with the projects of unfolded groups ($2: profile.yaml) that GitHub ($3) says are archived
+function archived_in_plain_groups() {
+  # shellcheck disable=SC2016 # a jq program: shellcheck can't tell through capture_lines
+  capture_lines "$1" jq -r -L "$LIB_DIR" --argjson repos "$3" \
+    'include "profile"; ($repos | map(select(.archived) | .url | url_key)) as $archived
+    | .projects[] | select(.folded | not) | .items[] | select(.url | url_key | IN($archived[]))
+    | "\(.name)  \(.url)"' <<<"$2"
+}
+
+### Helpers
+
+# Print the title $1 and the lines that follow it, indented, unless there are none
+function report() {
+  local _line
+  if [[ "$#" -le 1 ]]; then return 0; fi
+  echo "$1"
+  shift
+  for _line in "$@"; do echo "  ${_line}"; done
+}
+
+eval 'main "$@";exit "$?"'

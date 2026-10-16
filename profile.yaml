@@ -1,0 +1,155 @@
+# Data of the generated parts of README.md and contributions/README.md: `mise run build` writes them, `mise run check`
+# checks everything.
+#
+# Projects and contributions have a name, a url and an optional one-line description (Markdown allowed). Projects can
+# list languages, each with a color in github_colors or custom_colors.
+
+# GitHub's colors of the languages used below, written by `mise run colors`
+github_colors:
+  C: "#555555"
+  C++: "#f34b7d"
+  Java: "#b07219"
+  JavaScript: "#f1e05a"
+  PHP: "#4F5D95"
+  Python: "#3572A5"
+  Shell: "#89e051"
+  TypeScript: "#3178c6"
+
+# Colors for names GitHub doesn't know, or to replace one of GitHub's
+custom_colors:
+  Figma: "#a259ff"
+
+# Groups of projects, in display order. A group without a title is a plain list; "folded: true" puts it in a
+# closed <details>; "icon" names an image of .assets/icons/ (without .svg) shown before the title.
+projects:
+  - items:
+      - name: vcvars-bash
+        url: https://github.com/nathan818fr/vcvars-bash
+        description: "vcvarsall.bat for Bash: use MSVC from Git Bash, MSYS2, Cygwin and WSL"
+        languages: [Shell]
+      - name: java-props
+        url: https://github.com/nathan818fr/node-java-props
+        description: Read Java .properties files in Node.js, following the Java specification
+        languages: [TypeScript]
+      - name: fake-minecraft-server
+        url: https://github.com/nathan818fr/fake-minecraft-server
+        description: A Minecraft server that only answers server list requests, made to keep FunCraft.net listed after it closed
+        languages: [JavaScript]
+      - name: jetbrains-launcher
+        url: https://github.com/nathan818fr/jetbrains-launcher
+        description: Command-line launcher for JetBrains IDEs that keeps .idea out of your project
+        languages: [Shell]
+      - name: ts3-server-hook
+        url: https://github.com/nathan818fr/ts3-server-hook
+        description: "TeamSpeak 3 server mod: captures messages and voice after the server decrypts them, and forwards them through a socket"
+        languages: [C++]
+      - name: enhanced-maven-source-plugin
+        url: https://github.com/nathan818fr/enhanced-maven-source-plugin
+        description: The Maven Source Plugin with more options, such as adding generated sources (on Maven Central)
+        languages: [Java]
+      - name: hipay-professional-sdk-js
+        url: https://github.com/nathan818fr/hipay-professional-sdk-js
+        description: HiPay Professional SDK for Node.js
+        languages: [TypeScript]
+
+  - title: More projects
+    folded: true
+    icon: folder
+    items:
+      - name: among-us-taskbar-mask
+        url: https://github.com/nathan818fr/among-us-taskbar-mask
+        description: Hide the Among Us taskbar while playing
+        languages: [C++]
+      - name: minecraft-818-font
+        url: https://github.com/nathan818fr/minecraft-818-font
+        description: My HD font for Minecraft 1.8
+      - name: polus
+        url: https://github.com/nathan818fr/polus
+        description: Among Us server written from scratch (Java, Netty)
+        languages: [Java]
+      - name: minestats
+        url: https://github.com/nathan818fr/minestats
+        description: Realtime list of Minecraft servers
+        languages: [PHP]
+      - name: async-loop
+        url: https://github.com/nathan818fr/async-loop
+        description: "Node.js: loop through an array with an asynchronous action on each element"
+        languages: [JavaScript]
+      - name: node-libmaxminddb
+        url: https://github.com/nathan818fr/node-libmaxminddb
+        description: Node.js bindings for libmaxminddb, built by [libmaxminddb-build](https://github.com/nathan818fr/libmaxminddb-build)
+        languages: [C++, JavaScript]
+      - name: cinnamon-back-to-monitor
+        url: https://github.com/nathan818fr/cinnamon-back-to-monitor
+        description: "Cinnamon extension: put windows back where they were when a monitor comes back"
+        languages: [JavaScript]
+      - name: cinnamon-user-shadows
+        url: https://github.com/nathan818fr/cinnamon-user-shadows
+        description: "Cinnamon extension: custom window shadows"
+        languages: [Python, JavaScript]
+      - name: jar-butcher
+        url: https://github.com/nathan818fr/jar-butcher
+        description: Strip a JAR down to its class, method and field signatures
+        languages: [Java]
+
+  - title: School projects
+    folded: true
+    icon: cap
+    items:
+      - name: Bistromathique
+        url: https://github.com/nathan818fr/Epitech_Bistromathique
+        description: Arithmetic on integers of any size, in any base (Epitech)
+        languages: [C]
+      - name: Pay My Buddy
+        url: https://github.com/np111/P6_pay_my_buddy
+        description: A money transfer app, backend and web frontend (OpenClassrooms)
+        languages: [Java, TypeScript]
+      - name: Mediscreen
+        url: https://github.com/np111/P9_mediscreen
+        description: Medical app made of micro-services (OpenClassrooms)
+        languages: [Java]
+      - name: my_select
+        url: https://github.com/nathan818fr/Epitech_my_select
+        description: Pick items from a list in the terminal (Epitech)
+        languages: [C]
+      - name: Tandem
+        url: https://github.com/np111/P3_tandem
+        description: Specification of a mentoring app (OpenClassrooms)
+        languages: [Figma]
+      - name: Exam CPE
+        url: https://github.com/nathan818fr/Epitech_Exam_CPE
+        description: My exam exercises from the C course (Epitech)
+        languages: [C]
+
+# Highlights of what I sent to other projects. contributions/README.md lists everything, from
+# contributions/patches/<owner>/<repo>/: <number>-<words>.patch per pull request, unsubmitted-<branch>.patch for a
+# change never submitted, and an index.yaml with the title of each.
+contributions:
+  - name: Ulauncher
+    url: https://github.com/Ulauncher/Ulauncher
+    description: reported a 1-click RCE, fixed in 5.15.4 ([write-up](https://github.com/nathan818fr/ulauncher-websocket-rce)), and a POSIX sh fix
+  - name: libmem
+    url: https://github.com/rdbo/libmem
+    description: release pipeline with pre-built binaries (i686 included), MSVC runtime fix, CMake package config
+  - name: n8n
+    url: https://github.com/n8n-io/n8n
+    description: fix a crash caused by test webhooks
+  - name: BungeeCord
+    url: https://github.com/SpigotMC/BungeeCord
+    description: protocol and logging fixes
+
+# Public repos left out on purpose (`mise run unlisted` doesn't report them)
+ignored:
+  # Small school exercises
+  - https://github.com/nathan818fr/C_Lib_MyUtils
+  - https://github.com/nathan818fr/Epitech_allum1
+  # Build helpers of other projects (libmaxminddb-build is linked from node-libmaxminddb)
+  - https://github.com/nathan818fr/libmaxminddb-build
+  - https://github.com/nathan818fr/libmem-build
+  - https://github.com/nathan818fr/libmem-cmake
+  # Already linked from the Ulauncher line of contributions
+  - https://github.com/nathan818fr/ulauncher-websocket-rce
+  # My own setup
+  - https://github.com/nathan818fr/deb-packages
+  - https://github.com/nathan818fr/deb-repository
+  - https://github.com/nathan818fr/yaru818

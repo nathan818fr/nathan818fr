@@ -1,0 +1,8 @@
+1450-fix-badpacketexception-handling.patch: Fix BadPacketException handling
+1851-fire-serverkickevent-when-player-loss-connection-t.patch: Fire ServerKickEvent when player loss connection to server
+1997-fix-compatibility-of-title-packet-for-1-10-and-low.patch: Fix compatibility of Title packet for 1.10 and lower
+2179-support-multiples-openssl-versions-for-native-ciph.patch: Support multiples OpenSSL versions for native cipher
+2450-fix-eventbus-logger-it-don-t-use-the-bungeelogger.patch: Fix EventBus logger (it don't use the BungeeLogger!)
+2451-fix-direction-in-a-badpacketexception-message.patch: Fix Direction in a BadPacketException message
+2453-don-t-decode-unnecessarily-the-chat-packets-those.patch: Don't decode unnecessarily the Chat packets (those sent to the client)
+2460-smart-packet-decoding-decode-only-handled-packets.patch: Smart packet decoding (decode only handled packets)

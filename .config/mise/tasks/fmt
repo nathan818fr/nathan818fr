@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s inherit_errexit
+#MISE description="Format the tasks in place (shfmt)"
+# shellcheck source=../lib/common.bash
+source -- "$(dirname -- "$0")/../lib/common.bash"
+
+function main() {
+  local _before _after
+  _before="$(fingerprint)"
+  shfmt -i 2 -w -- "${TASKS_DIR}"/* "${LIB_DIR}/common.bash"
+  _after="$(fingerprint)"
+  if [[ "$_before" == "$_after" ]]; then echo 'Already formatted.'; else echo 'Formatted.'; fi
+}
+
+# Checksum of every file this task may rewrite
+function fingerprint() {
+  cat -- "${TASKS_DIR}"/* "${LIB_DIR}/common.bash" | cksum
+}
+
+eval 'main "$@";exit "$?"'

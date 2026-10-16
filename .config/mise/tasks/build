@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s inherit_errexit
+#MISE description="Fill the generated blocks of README.md and contributions/README.md, and draw the language badges"
+# shellcheck source=../lib/common.bash
+source -- "$(dirname -- "$0")/../lib/common.bash"
+
+function main() {
+  local _json _text
+  local -a _changed=()
+  if ! check_profile; then return 1; fi
+  if ! check_contributions; then return 1; fi
+  if ! _json="$(profile_json)"; then return 1; fi
+
+  if ! _text="$(render_readme "$_json")"; then return 1; fi
+  write_if_changed "$README" "$_text"
+  if ! _text="$(render_index)"; then return 1; fi
+  write_if_changed "$INDEX" "$_text"
+
+  if ! update_badges "$_json" write _changed; then return 1; fi
+  if [[ "${#_changed[@]}" -eq 0 ]]; then
+    echo 'Language badges already up to date.'
+  else
+    echo "Language badges updated: ${_changed[*]}"
+  fi
+}
+
+### Helpers
+
+# Write the text $2 to the file $1 if it differs, and say what was done
+function write_if_changed() {
+  local _name="${1#"${ROOT_DIR}/"}"
+  if [[ "$2" == "$(<"$1")" ]]; then
+    echo "${_name} already up to date."
+  else
+    printf '%s\n' "$2" >"$1"
+    echo "${_name} updated."
+  fi
+}
+
+eval 'main "$@";exit "$?"'

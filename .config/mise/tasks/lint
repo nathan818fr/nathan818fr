@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s inherit_errexit
+#MISE description="Lint the tasks, profile.yaml and contributions/, and check that the generated files are up to date"
+# shellcheck source=../lib/common.bash
+source -- "$(dirname -- "$0")/../lib/common.bash"
+
+function main() {
+  local -a _errors=() _problems=() _contributions=()
+  local _problem _message
+  lint_shell _errors
+  if ! profile_errors _problems; then return 1; fi
+  for _problem in "${_problems[@]}"; do _errors+=("profile.yaml: ${_problem}"); done
+  if [[ "${#_problems[@]}" -eq 0 ]]; then
+    if ! contributions_errors _contributions; then return 1; fi
+    _errors+=("${_contributions[@]}")
+  fi
+  # The outputs can only be rendered from valid data
+  if [[ "${#_problems[@]}" -eq 0 && "${#_contributions[@]}" -eq 0 ]]; then
+    if ! lint_outputs _errors; then return 1; fi
+  fi
+
+  for _message in "${_errors[@]}"; do echo "error: ${_message}" >&2; done
+  echo "lint: ${#_errors[@]} error(s)"
+  if [[ "${#_errors[@]}" -gt 0 ]]; then return 1; fi
+}
+
+### Checks
+
+function lint_shell() {
+  run_check "$1" 'the tasks have shellcheck issues' \
+    shellcheck --external-sources --source-path=SCRIPTDIR -- "${TASKS_DIR}"/* "${LIB_DIR}/common.bash"
+  run_check "$1" "the tasks are not formatted: run \`mise run fmt\`" \
+    shfmt -i 2 -d -- "${TASKS_DIR}"/* "${LIB_DIR}/common.bash"
+}
+
+# Add a message to the array named $1 for each generated file that differs from what `build` would write
+function lint_outputs() {
+  local -n _output_errors="$1"
+  local -a _changed=()
+  local _json _text
+  if ! _json="$(profile_json)"; then return 1; fi
+  if ! _text="$(render_readme "$_json")"; then
+    _output_errors+=('README.md: its generated blocks cannot be rendered (see above)')
+  elif [[ "$_text" != "$(<"$README")" ]]; then
+    _output_errors+=("README.md is out of date: run \`mise run build\`")
+  fi
+  if ! _text="$(render_index)"; then
+    _output_errors+=('contributions/README.md: its generated blocks cannot be rendered (see above)')
+  elif [[ "$_text" != "$(<"$INDEX")" ]]; then
+    _output_errors+=("contributions/README.md is out of date: run \`mise run build\`")
+  fi
+  if ! update_badges "$_json" check _changed; then return 1; fi
+  if [[ "${#_changed[@]}" -gt 0 ]]; then
+    _output_errors+=("the language badges are out of date (${_changed[*]}): run \`mise run build\`")
+  fi
+}
+
+### Helpers
+
+# Run a check command quietly; if it fails, show its output and add message $2 to the array named $1
+function run_check() {
+  local -n _check_errors="$1"
+  local _message="$2" _output
+  shift 2
+  if ! _output="$("$@" 2>&1)"; then
+    if [[ -n "$_output" ]]; then echo "$_output" >&2; fi
+    _check_errors+=("$_message")
+  fi
+}
+
+eval 'main "$@";exit "$?"'

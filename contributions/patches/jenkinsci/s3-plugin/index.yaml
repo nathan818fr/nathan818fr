@@ -1,0 +1,2 @@
+70-add-nofilename-option-destination-bucket-will-be-u.patch: "Add \"noFilename\" option: `Destination bucket` will be used as final key, ignoring the original filename"
+115-single-file-upload-option.patch: Single-file upload option

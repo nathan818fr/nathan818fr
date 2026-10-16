@@ -1,0 +1,1 @@
+60-fix-bug-when-register-is-called-before-lang-loadin.patch: Fix bug when register is called before lang loading and allow implicit rules registration

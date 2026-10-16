@@ -1,0 +1,5 @@
+154-release-pre-built-binaries.patch: Release pre-built binaries
+155-add-i686-linux-gnu-to-release-targets.patch: Add i686-linux-gnu to release targets
+156-add-i686-linux-musl-to-release-targets.patch: Add i686-linux-musl to release targets
+157-fix-msvc-runtime-library-selection.patch: Fix MSVC runtime library selection
+158-add-libmem-config-cmake.patch: Add libmem-config.cmake

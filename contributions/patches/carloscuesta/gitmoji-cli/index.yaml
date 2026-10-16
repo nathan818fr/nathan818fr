@@ -1,0 +1,4 @@
+129-support-older-git-versions-2-13-for-debian-stable.patch: Support older git versions (< 2.13 - for debian stable/stretch)
+219-option-to-enable-disable-the-scope-promt.patch: Option to enable/disable the scope promt
+221-set-current-values-as-default-in-gitmoji-g.patch: Set current values as default in `gitmoji -g`
+366-re-add-hook-content-changes.patch: Re-add hook content changes

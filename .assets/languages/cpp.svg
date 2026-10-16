@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="39" height="16" viewBox="0 0 39 16" role="img" aria-label="C++">
+  <style>
+    text { font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; fill: #59636e; }
+    @media (prefers-color-scheme: dark) { text { fill: #9198a1; } }
+  </style>
+  <circle cx="5" cy="8" r="5" fill="#f34b7d"/>
+  <text x="14" y="12">C++</text>
+</svg>

@@ -1,0 +1,2 @@
+41-add-lumen-compatibility-by-not-using-the-facades.patch: Add lumen compatibility (by not using the facades)
+42-fix-lumen-compatibility-in-console.patch: Fix lumen compatibility in console

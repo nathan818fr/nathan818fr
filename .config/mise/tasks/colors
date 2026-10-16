@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s inherit_errexit
+#MISE description="Fill github_colors in profile.yaml with GitHub's color of each language used (from linguist)"
+#USAGE flag "--update" help="also re-read the colors already in profile.yaml"
+# shellcheck source=../lib/common.bash
+source -- "$(dirname -- "$0")/../lib/common.bash"
+
+# GitHub's languages and their colors
+LINGUIST_URL='https://raw.githubusercontent.com/github-linguist/linguist/main/lib/linguist/languages.yml'
+
+function main() {
+  local _json _colors _linguist _block
+  local -a _missing=() _unused=() _unknown=()
+  if ! _json="$(profile_json)"; then
+    echo 'error: profile.yaml is not valid YAML' >&2
+    return 1
+  fi
+  if ! _colors="$(wanted_colors "$_json" "${usage_update:-false}")"; then return 1; fi
+  if ! capture_lines _missing jq -r 'to_entries[] | select(.value == null) | .key' <<<"$_colors"; then return 1; fi
+  # shellcheck disable=SC2016 # a jq program: shellcheck can't tell through capture_lines
+  if ! capture_lines _unused jq -r --argjson colors "$_colors" '(.github_colors // {}) | keys - ($colors | keys) | .[]' \
+    <<<"$_json"; then
+    return 1
+  fi
+
+  if [[ "${#_missing[@]}" -gt 0 ]]; then
+    echo "Reading GitHub's colors from ${LINGUIST_URL}"
+    if ! _linguist="$(linguist_colors)"; then
+      echo "error: could not read GitHub's languages from ${LINGUIST_URL}" >&2
+      return 1
+    fi
+    if ! _colors="$(jq -c --argjson linguist "$_linguist" 'with_entries(.value //= $linguist[.key])' <<<"$_colors")"; then
+      return 1
+    fi
+    if ! capture_lines _unknown jq -r 'to_entries[] | select(.value == null) | .key' <<<"$_colors"; then return 1; fi
+    if [[ "${#_unknown[@]}" -gt 0 ]]; then
+      echo "error: GitHub has no color for: ${_unknown[*]} (add them to custom_colors)" >&2
+      return 1
+    fi
+  fi
+
+  if ! _block="$(colors_block "$_colors")"; then return 1; fi
+  if ! write_block "$_block"; then return 1; fi
+  if [[ "${#_missing[@]}" -eq 0 && "${#_unused[@]}" -eq 0 ]]; then
+    echo 'github_colors already complete.'
+    return 0
+  fi
+  if [[ "${#_missing[@]}" -gt 0 ]]; then echo "github_colors: read ${_missing[*]}"; fi
+  if [[ "${#_unused[@]}" -gt 0 ]]; then echo "github_colors: removed ${_unused[*]} (no project uses them)"; fi
+  echo "Next: \`mise run build\`."
+}
+
+### Steps
+
+# Print the colors github_colors should hold, as JSON, null where missing; $1: profile.yaml as JSON, $2: --update
+function wanted_colors() {
+  jq -c -L "$LIB_DIR" --argjson update "$2" 'include "profile"; . as $p | (.github_colors // {}) as $gh
+    | [used_languages[] | select(. as $lang | $p.custom_colors // {} | has($lang) | not)]
+    | map({key: ., value: (if $update then null else $gh[.] end)}) | from_entries' <<<"$1"
+}
+
+# Print GitHub's colors as a JSON object: language name -> color
+function linguist_colors() {
+  curl -fsSL -- "$LINGUIST_URL" | yq -o=json 'with_entries(.value = .value.color)'
+}
+
+# Print the lines of the github_colors block for the colors $1, sorted, quoting names YAML would misread
+function colors_block() {
+  jq -r 'to_entries | sort_by(.key)[]
+    | (if .key | test("^[A-Za-z]([A-Za-z0-9+#._ -]*[A-Za-z0-9+#._-])?$") then .key else .key | tojson end) as $name
+    | "  \($name): \(.value | tojson)"' <<<"$1"
+}
+
+# Replace the github_colors block of profile.yaml with the lines $1, leaving the rest of the file as it is
+# (yq would rewrite all of it and drop its blank lines)
+function write_block() {
+  local _updated
+  if ! _updated="$(BLOCK="$1" awk -- '
+    /^github_colors:/ { print (ENVIRON["BLOCK"] == "" ? "github_colors: {}" : "github_colors:"); if (ENVIRON["BLOCK"] != "") print ENVIRON["BLOCK"]; found = 1; skip = 1; next }
+    skip && /^([ \t]|$)/ { next }
+    skip { skip = 0; print "" }
+    { print }
+    END { if (!found) exit 1 }
+  ' "$PROFILE")"; then
+    echo 'error: profile.yaml has no "github_colors:" line: add one (at the top level) and run this again' >&2
+    return 1
+  fi
+  if [[ "$_updated" != "$(<"$PROFILE")" ]]; then printf '%s\n' "$_updated" >"$PROFILE"; fi
+}
+
+eval 'main "$@";exit "$?"'

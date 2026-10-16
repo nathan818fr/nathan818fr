@@ -1,0 +1,1 @@
+unsubmitted-master.patch: Fix the prompt showing in non-git directories with git ≥ 2.18; faster `gitstatus.py` (a single `git status --porcelain -b` call)
