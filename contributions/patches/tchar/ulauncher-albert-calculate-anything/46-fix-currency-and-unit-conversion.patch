@@ -1,0 +1,57 @@
+From c3e84bfa8e478e7f54e641d143cf5ebd9b609665 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 9 Sep 2023 09:56:58 +0200
+Subject: [PATCH 1/2] Remove ZWD currency alias
+
+The current alias "Z$" collide with zepto$ / zeptoUSD
+---
+ data/lang/currency.txt | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/data/lang/currency.txt b/data/lang/currency.txt
+index e510cc9..59ebb0d 100644
+--- a/data/lang/currency.txt
++++ b/data/lang/currency.txt
+@@ -36,6 +36,5 @@
+ @alias PEN = S/. 
+ @alias TTD = TT$ 
+ @alias UAH = ₴ 
+-@alias ZWD = Z$ 
+ @alias BTC = bitcoin = bitcoins
+ @alias ETH = ether = ehterium
+\ No newline at end of file
+
+From e19313d4197e0a51e5e60aae3a2d73fe42bbcce6 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 9 Sep 2023 10:01:09 +0200
+Subject: [PATCH 2/2] Filter currency names
+
+---
+ calculate_anything/units/service.py | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/calculate_anything/units/service.py b/calculate_anything/units/service.py
+index 33663bc..7b97515 100644
+--- a/calculate_anything/units/service.py
++++ b/calculate_anything/units/service.py
+@@ -55,10 +55,20 @@ def _update_callback(self, data: CurrencyData, error: bool) -> None:
+ 
+         updated_currencies = set()
+         for currency, currency_info in data.items():
++            if 'currency_' + currency in updated_currencies:
++                logger.info('Skip currency that already exists: {}'.format(currency))
++                continue
+             if 'currency_' + currency not in ureg:
++                if len(currency) < 3 or not currency.isalpha():
++                    logger.info('Skip currency with unsupported name: {}'.format(currency))
++                    continue
++                if currency in ureg and currency not in ('ETH'): # Allow ETH to override 'exathou'
++                    logger.info('Skip currency with colliding name: {} ("{}")'.format(currency, ureg(currency)))
++                    continue
+                 ureg.define('currency_{} = nan currency_EUR'.format(currency))
+                 ureg.define('@alias currency_{0} = {0}'.format(currency))
+ 
++            logger.debug('Add currency: {} {}'.format(currency, str(currency_info)))
+             updated_currencies.add('currency_' + currency)
+             currency_units = ureg('currency_' + currency)
+ 

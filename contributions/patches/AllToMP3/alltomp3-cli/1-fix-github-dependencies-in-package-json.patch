@@ -1,0 +1,28 @@
+From d674b9440270685fb0211de45e67e88c28b99e7f Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Thu, 3 Mar 2016 16:14:05 +0100
+Subject: [PATCH] Fix github dependencies in package.json
+
+---
+ package.json | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/package.json b/package.json
+index cf037a8..94eb14f 100644
+--- a/package.json
++++ b/package.json
+@@ -34,12 +34,12 @@
+   },
+   "homepage": "https://github.com/AllToMP3/alltomp3-cli#readme",
+   "dependencies": {
+-    "alltomp3": "https://github.com/AllToMP3/alltomp3",
++    "alltomp3": "git+https://github.com/AllToMP3/alltomp3",
+     "chalk": "^1.1.1",
+     "commander": "^2.9.0",
+     "lodash": "^4.5.0",
+     "progress": "git+https://github.com/AllToMP3/node-progress.git#multiline_support",
+     "request": "^2.69.0",
+-    "tabtab": "https://github.com/AllToMP3/node-tabtab"
++    "tabtab": "git+https://github.com/AllToMP3/node-tabtab"
+   }
+ }

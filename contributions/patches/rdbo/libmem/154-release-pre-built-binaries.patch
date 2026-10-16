@@ -1,0 +1,772 @@
+From d4314b5ec8f892644dd3f642e71d632994f37f2f Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Tue, 5 Dec 2023 08:54:21 +0100
+Subject: [PATCH 1/3] Improve static library bundling
+
+---
+ CMakeLists.txt      | 47 ++++++++++++++++++++++++++++++++++++++-------
+ tools/makebundle.sh | 23 ----------------------
+ 2 files changed, 40 insertions(+), 30 deletions(-)
+ delete mode 100644 tools/makebundle.sh
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3e466d22..539b5bf9 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -108,13 +108,6 @@ endif()
+ 
+ if (LIBMEM_BUILD_STATIC)
+ 	add_library(libmem STATIC ${LIBMEM_SRC})
+-	if(NOT ${CMAKE_SYSTEM_NAME} STREQUAL Windows AND NOT ${CMAKE_SYSTEM_NAME} STREQUAL CYGWIN)
+-		add_custom_command(
+-			TARGET libmem POST_BUILD
+-			WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+-			COMMAND sh ${PROJECT_SOURCE_DIR}/tools/makebundle.sh
+-		)
+-	endif()
+ else()
+ 	add_library(libmem SHARED ${LIBMEM_SRC})
+ endif()
+@@ -175,6 +168,46 @@ if(NOT ${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD")
+ endif()
+ 
+ target_link_libraries(libmem ${LIBMEM_DEPS})
++if(LIBMEM_BUILD_STATIC)
++	# Create a bundled static library containing all dependencies (to mimic the shared library behavior)
++	set_target_properties(libmem PROPERTIES OUTPUT_NAME "libmem_partial")
++	set(libmem_bundle_files "$<TARGET_FILE:libmem>")
++
++	get_target_property(libmem_link_libraries libmem LINK_LIBRARIES)
++	foreach(libmem_link_library IN LISTS libmem_link_libraries)
++		if(TARGET "${libmem_link_library}")
++			list(APPEND libmem_bundle_files "$<TARGET_FILE:${libmem_link_library}>")
++		endif()
++	endforeach()
++
++	if(NOT ${CMAKE_SYSTEM_NAME} STREQUAL Windows AND NOT ${CMAKE_SYSTEM_NAME} STREQUAL CYGWIN)
++		file(WRITE "${CMAKE_BINARY_DIR}/liblibmem.ar.in" "CREATE liblibmem.a\n" )
++		foreach(libmem_bundle_file IN LISTS libmem_bundle_files)
++			file(APPEND "${CMAKE_BINARY_DIR}/liblibmem.ar.in" "ADDLIB ${libmem_bundle_file}\n")
++		endforeach()
++		file(APPEND "${CMAKE_BINARY_DIR}/liblibmem.ar.in" "SAVE\nEND\n")
++		file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/liblibmem.ar" INPUT "${CMAKE_BINARY_DIR}/liblibmem.ar.in")
++
++		add_custom_command(
++			TARGET libmem POST_BUILD
++			WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
++			COMMAND "${CMAKE_AR}" -M < "${CMAKE_BINARY_DIR}/liblibmem.ar"
++			COMMENT "Bundling liblibmem.a"
++			VERBATIM
++		)
++	elseif(MSVC)
++		find_program(LIB_EXECUTABLE lib)
++		add_custom_command(
++			TARGET libmem POST_BUILD
++			WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
++			COMMAND "${LIB_EXECUTABLE}" /NOLOGO /OUT:libmem.lib ${libmem_bundle_files}
++			COMMENT "Bundling libmem.lib"
++			VERBATIM
++		)
++	else()
++		message(WARNING "Static library bundling not supported on this platform")
++	endif()
++endif()
+ 
+ if(${CMAKE_SYSTEM_NAME} STREQUAL Windows OR ${CMAKE_SYSTEM_NAME} STREQUAL CYGWIN)
+ 	if(NOT ${CMAKE_SYSTEM_NAME} STREQUAL CYGWIN)
+diff --git a/tools/makebundle.sh b/tools/makebundle.sh
+deleted file mode 100644
+index e5674104..00000000
+--- a/tools/makebundle.sh
++++ /dev/null
+@@ -1,23 +0,0 @@
+-#!/bin/sh
+-
+-mv liblibmem.a liblibmem_partial.a
+-
+-if [ ! -f ./libcapstone.a ]; then
+-	ln -s capstone-engine-prefix/src/capstone-engine-build/libcapstone.a ./libcapstone.a
+-fi
+-if [ ! -f ./libkeystone.a ]; then
+-	ln -s keystone-engine-prefix/src/keystone-engine-build/llvm/lib/libkeystone.a ./libkeystone.a
+-fi
+-if [ ! -f ./libLIEF.a ]; then
+-	ln -s lief-project-prefix/src/lief-project-build/libLIEF.a ./libLIEF.a
+-fi
+-ar -M << EOM
+-	CREATE liblibmem.a
+-	ADDLIB liblibmem_partial.a
+-	ADDLIB libcapstone.a
+-	ADDLIB libkeystone.a
+-	ADDLIB libLIEF.a
+-	ADDLIB libllvm.a
+-	SAVE
+-	END
+-EOM
+
+From 52b08234d35b263f8d7cafa1277144792e7af05e Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Tue, 5 Dec 2023 13:43:55 +0100
+Subject: [PATCH 2/3] Add release script
+
+---
+ .gitmodules                            |   4 +
+ external/CMakeLists.txt                |  25 +-
+ external/vcvars-bash                   |   1 +
+ tools/build-release.sh                 | 310 +++++++++++++++++++++++++
+ tools/docker-env/.dockerignore         |   2 +
+ tools/docker-env/entrypoint.sh         |  18 ++
+ tools/docker-env/linux-gnu.Dockerfile  |  20 ++
+ tools/docker-env/linux-musl.Dockerfile |  16 ++
+ tools/local-env/windows-msvc.sh        |  33 +++
+ 9 files changed, 428 insertions(+), 1 deletion(-)
+ create mode 160000 external/vcvars-bash
+ create mode 100755 tools/build-release.sh
+ create mode 100644 tools/docker-env/.dockerignore
+ create mode 100644 tools/docker-env/entrypoint.sh
+ create mode 100644 tools/docker-env/linux-gnu.Dockerfile
+ create mode 100644 tools/docker-env/linux-musl.Dockerfile
+ create mode 100755 tools/local-env/windows-msvc.sh
+
+diff --git a/.gitmodules b/.gitmodules
+index 4b8230e7..6203fdd7 100644
+--- a/.gitmodules
++++ b/.gitmodules
+@@ -14,3 +14,7 @@
+ 	path = external/injector
+ 	url = https://github.com/rdbo/injector
+ 	branch = rdbo-flatpak-sandbox-fix
++[submodule "vcvars-bash"]
++	path = external/vcvars-bash
++	url = https://github.com/nathan818fr/vcvars-bash.git
++	branch = master
+diff --git a/external/CMakeLists.txt b/external/CMakeLists.txt
+index 49f308e6..3a7bcc81 100644
+--- a/external/CMakeLists.txt
++++ b/external/CMakeLists.txt
+@@ -2,6 +2,7 @@ set(CAPSTONE_CMAKE_ARGS
+ 	-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+ 	-DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
+ 	-DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
++	-DCMAKE_MSVC_RUNTIME_LIBRARY=${CMAKE_MSVC_RUNTIME_LIBRARY}
+ 	-DCAPSTONE_ARCHITECTURE_DEFAULT=ON
+ 	-DCAPSTONE_BUILD_TESTS=OFF
+ 	-DCAPSTONE_BUILD_CSTOOL=OFF
+@@ -9,8 +10,16 @@ set(CAPSTONE_CMAKE_ARGS
+ 	-DCAPSTONE_BUILD_SHARED=OFF
+ 	-DCMAKE_POSITION_INDEPENDENT_CODE=ON
+ 	-DCAPSTONE_ARCHITECTURE_DEFAULT=OFF
+-	-DCAPSTONE_BUILD_STATIC_RUNTIME=OFF
+ )
++if(DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
++	if(${CMAKE_MSVC_RUNTIME_LIBRARY} STREQUAL "MultiThreaded" OR ${CMAKE_MSVC_RUNTIME_LIBRARY} STREQUAL "MultiThreadedDebug")
++		set(KEYSTONE_CMAKE_ARGS ${KEYSTONE_CMAKE_ARGS} -DCAPSTONE_BUILD_STATIC_RUNTIME=ON)
++	else()
++		set(KEYSTONE_CMAKE_ARGS ${KEYSTONE_CMAKE_ARGS} -DCAPSTONE_BUILD_STATIC_RUNTIME=OFF)
++	endif()
++else()
++	set(KEYSTONE_CMAKE_ARGS ${KEYSTONE_CMAKE_ARGS} -DCAPSTONE_BUILD_STATIC_RUNTIME=OFF)
++endif()
+ if(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64")
+ 	set(CAPSTONE_CMAKE_ARGS ${CAPSTONE_CMAKE_ARGS} -DCAPSTONE_ARM64_SUPPORT=ON)
+ elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm")
+@@ -27,9 +36,22 @@ set(KEYSTONE_CMAKE_ARGS
+ 	-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+ 	-DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
+ 	-DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
++	-DCMAKE_MSVC_RUNTIME_LIBRARY=${CMAKE_MSVC_RUNTIME_LIBRARY}
+ 	-DCMAKE_POSITION_INDEPENDENT_CODE=ON
+ 	-DKEYSTONE_BUILD_STATIC_RUNTIME=OFF
+ )
++if(DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
++	string(TOUPPER "LLVM_USE_CRT_${CMAKE_BUILD_TYPE}" LLVM_USE_CRT_VAR)
++	if(${CMAKE_MSVC_RUNTIME_LIBRARY} STREQUAL "MultiThreaded")
++		set(KEYSTONE_CMAKE_ARGS ${KEYSTONE_CMAKE_ARGS} -D${LLVM_USE_CRT_VAR}=MT)
++	elseif(${CMAKE_MSVC_RUNTIME_LIBRARY} STREQUAL "MultiThreadedDebug")
++		set(KEYSTONE_CMAKE_ARGS ${KEYSTONE_CMAKE_ARGS} -D${LLVM_USE_CRT_VAR}=MTd)
++	elseif(${CMAKE_MSVC_RUNTIME_LIBRARY} STREQUAL "MultiThreadedDLL")
++		set(KEYSTONE_CMAKE_ARGS ${KEYSTONE_CMAKE_ARGS} -D${LLVM_USE_CRT_VAR}=MD)
++	elseif(${CMAKE_MSVC_RUNTIME_LIBRARY} STREQUAL "MultiThreadedDebugDLL")
++		set(KEYSTONE_CMAKE_ARGS ${KEYSTONE_CMAKE_ARGS} -D${LLVM_USE_CRT_VAR}=MDd)
++	endif()
++endif()
+ if(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64")
+ 	set(KEYSTONE_CMAKE_ARGS ${KEYSTONE_CMAKE_ARGS} -DLLVM_TARGETS_TO_BUILD=AArch64)
+ elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm")
+@@ -45,6 +67,7 @@ set(LIEF_CMAKE_ARGS
+ 	-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+ 	-DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
+ 	-DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
++	-DCMAKE_MSVC_RUNTIME_LIBRARY=${CMAKE_MSVC_RUNTIME_LIBRARY}
+ 	-DLIEF_USE_CCACHE=OFF
+ 	-DLIEF_ENABLE_JSON=OFF
+ 	-DLIEF_FROZEN_ENABLED=OFF
+diff --git a/external/vcvars-bash b/external/vcvars-bash
+new file mode 160000
+index 00000000..7041b84c
+--- /dev/null
++++ b/external/vcvars-bash
+@@ -0,0 +1 @@
++Subproject commit 7041b84cb3e035a0351430a817dff4ed6a16dfd7
+diff --git a/tools/build-release.sh b/tools/build-release.sh
+new file mode 100755
+index 00000000..20b8ee51
+--- /dev/null
++++ b/tools/build-release.sh
+@@ -0,0 +1,310 @@
++#!/usr/bin/env bash
++set -Eeuo pipefail
++shopt -s inherit_errexit
++
++declare -gr NIX_PLATFORMS=(
++  # Linux (GNU/glibc)
++  x86_64-linux-gnu
++  aarch64-linux-gnu
++  # Linux (Alpine/musl)
++  x86_64-linux-musl
++  aarch64-linux-musl
++)
++declare -gr NIX_VARIANTS=(
++  shared
++  static
++)
++
++declare -gr WINDOWS_PLATFORMS=(
++  # Windows (MSVC)
++  i686-windows-msvc
++  x86_64-windows-msvc
++  aarch64-windows-msvc
++)
++declare -gr WINDOWS_VARIANTS=(
++  shared-md
++  static-md
++  static-mt
++)
++
++SCRIPT_DIR=$(dirname -- "$(realpath -m -- "$0")")
++declare -gr SCRIPT_DIR
++PROJECT_DIR=$(dirname -- "$SCRIPT_DIR")
++declare -gr PROJECT_DIR
++
++function define_targets() {
++  local platform variant
++  TARGETS=()
++  for platform in "${NIX_PLATFORMS[@]}"; do
++    for variant in "${NIX_VARIANTS[@]}"; do
++      TARGETS+=("${platform}-${variant}")
++    done
++  done
++  for platform in "${WINDOWS_PLATFORMS[@]}"; do
++    for variant in "${WINDOWS_VARIANTS[@]}"; do
++      TARGETS+=("${platform}-${variant}")
++    done
++  done
++  declare -gr TARGETS
++}
++
++function print_usage() {
++  cat <<EOF
++Usage: $(basename -- "$0") <target>
++
++Environment variables:
++  LIBMEM_BUILD_OUT_DIR: The output directory (default: "build/out/libmem-local-\${target}").
++  LIBMEM_BUILD_SKIP_ARCHIVE: Skip the final archive creation (default: false).
++
++Supported targets:
++$(printf '  - %s\n' "${TARGETS[@]}")
++EOF
++}
++
++function main() {
++  define_targets
++  echo "$TARGETS"
++
++  if [[ $# -ne 1 ]]; then
++    print_usage >&2
++    return 1
++  fi
++
++  local target=$1
++  if ! array_contains "$target" "${TARGETS[@]}"; then
++    printf 'error: Unknown target: %s\n' "$target" >&2
++    return 1
++  fi
++
++  local source_dir=${PROJECT_DIR}
++  local out_dir
++  if [[ -n "${LIBMEM_BUILD_OUT_DIR:-}" ]]; then
++    out_dir=$(realpath -m -- "$LIBMEM_BUILD_OUT_DIR")
++    if [[ -d "$out_dir" ]]; then
++      printf 'error: Output directory already exists: %s\n' "$out_dir" >&2
++      return 1
++    fi
++  else
++    out_dir=$(realpath -m -- "build/out/libmem-local-${target}")
++    rm -rf -- "$out_dir"
++  fi
++  mkdir -p -- "$out_dir"
++
++  printf 'Target: %s\n' "$target"
++  printf 'Source directory: %s\n' "$source_dir"
++  printf 'Output directory: %s\n' "$out_dir"
++  printf '\n'
++
++  case "$target" in
++  *-linux-*) _build_in_docker "$target" "$source_dir" "$out_dir" ;;
++  *) _build_locally "$target" "$source_dir" "$out_dir" ;;
++  esac
++
++  if [[ "${LIBMEM_BUILD_SKIP_ARCHIVE:-}" != true ]]; then
++    printf '[+] Create archive\n'
++    tar -czf "${out_dir}.tar.gz" --owner=0 --group=0 --numeric-owner -C "$(dirname -- "$out_dir")" "$(basename -- "$out_dir")"
++  fi
++
++  printf '[+] Done\n'
++}
++
++function _build_in_docker() {
++  local target=$1 source_dir=$2 out_dir=$3
++
++  local docker_os=unknown docker_platform=unknown
++  case "$target" in
++  *-linux-gnu-*) docker_os=linux-gnu ;;
++  *-linux-musl-*) docker_os=linux-musl ;;
++  esac
++  case "$target" in
++  x86_64-*) docker_platform=linux/amd64 ;;
++  aarch64-*) docker_platform=linux/arm64 ;;
++  esac
++
++  local docker_image="libmem-build-${docker_os}-${docker_platform##*/}"
++  docker build --platform "$docker_platform" -t "$docker_image" -f "${SCRIPT_DIR}/docker-env/${docker_os}.Dockerfile" "${SCRIPT_DIR}/docker-env"
++  docker run --platform "$docker_platform" --rm \
++    -e "PUID=$(id -u)" \
++    -e "PGID=$(id -g)" \
++    -e "_TARGET=${target}" \
++    -e "_SOURCE_DIR=/source" \
++    -e "_BUILD_DIR=/build" \
++    -e "_OUT_DIR=/out" \
++    -v "${source_dir}:/source:ro" \
++    -v "${out_dir}:/out:rw" \
++    -i "$docker_image" \
++    bash <<<"set -Eeuo pipefail; shopt -s inherit_errexit; $(declare -f do_build); do_build; exit 0"
++}
++
++function _build_locally() {
++  local target=$1 source_dir=$2 out_dir=$3
++
++  local local_env local_env_arch
++  local_env=$(awk -F- '{print $2"-"$3}' <<<"$target") # keep only the middle part
++  local_env_arch=${target%%-*} # remove everything after the first dash
++
++  init_temp_dir
++  _=_ \
++    _TARGET="$target" \
++    _SOURCE_DIR="$source_dir" \
++    _BUILD_DIR="${g_temp_dir}/build" \
++    _OUT_DIR="$out_dir" \
++    "${SCRIPT_DIR}/local-env/${local_env}.sh" "$local_env_arch" \
++    bash <<<"set -Eeuo pipefail; shopt -s inherit_errexit; $(declare -f do_build); do_build; exit 0"
++}
++
++# Perform the build and copy the results to the output directory.
++# This function must be self-contained and exportable.
++# Inputs:
++#   _TARGET: The target to build.
++#   _SOURCE_DIR: The absolute path to the source directory.
++#   _BUILD_DIR: The absolute path to the build directory.
++#   _OUT_DIR: The absolute path to the output directory.
++function do_build() {
++  true "${_TARGET?required}" "${_SOURCE_DIR?required}" "${_BUILD_DIR?required}" "${_OUT_DIR?required}"
++
++  # Build using CMake
++  function build_variant() {
++    local variant_name=$1
++    local variant_build_type=$2
++    local variant_conf=("${@:3}")
++    printf '[+] Build (%s)\n' "$variant_name"
++
++    # Prepare config
++    case "$_TARGET" in
++    *-windows-msvc-*)
++      variant_conf+=(-G 'NMake Makefiles')
++      ;;
++    *)
++      local flags
++      case "$_TARGET" in
++      x86_64-*) flags='-march=westmere' ;;
++      aarch64-*) flags='-march=armv8-a' ;;
++      esac
++      variant_conf+=(-G 'Unix Makefiles' -DCMAKE_C_FLAGS="$flags" -DCMAKE_CXX_FLAGS="$flags")
++      ;;
++    esac
++    variant_conf+=(-DLIBMEM_BUILD_TESTS='OFF')
++
++    # Build using CMake
++    local variant_build_dir="${_BUILD_DIR}/${variant_name}"
++    set -x
++    cmake -S "$_SOURCE_DIR" -B "$variant_build_dir" -DCMAKE_BUILD_TYPE="$variant_build_type" "${variant_conf[@]}"
++    cmake --build "$variant_build_dir" --config "$variant_build_type" --parallel "$(nproc)"
++    { set +x; } 2>/dev/null
++
++    # Copy libraries
++    local variant_out_dir="${_OUT_DIR}/lib/${variant_name}"
++    mkdir -p -- "$variant_out_dir"
++    function copy_lib() {
++      install -vD -m644 -- "${variant_build_dir}/${1}" "${variant_out_dir}/${2:-$(basename -- "$1")}"
++    }
++    case "$_TARGET" in
++    *-windows-msvc-shared*) copy_lib 'libmem.dll' ;;
++    *-windows-msvc-static*) copy_lib 'libmem.lib' ;;
++    *-shared) copy_lib 'liblibmem.so' ;;
++    *-static) copy_lib 'liblibmem.a' ;;
++    esac
++  }
++
++  case "$_TARGET" in
++  *-windows-msvc-shared-md)
++    build_variant release Release -DLIBMEM_BUILD_STATIC=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
++    build_variant debug Debug -DLIBMEM_BUILD_STATIC=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebugDLL
++    ;;
++  *-windows-msvc-static-md)
++    build_variant release Release -DLIBMEM_BUILD_STATIC=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
++    build_variant debug Debug -DLIBMEM_BUILD_STATIC=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebugDLL
++    ;;
++  *-windows-msvc-static-mt)
++    build_variant release Release -DLIBMEM_BUILD_STATIC=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
++    build_variant debug Debug -DLIBMEM_BUILD_STATIC=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug
++    ;;
++  *-shared)
++    build_variant ./ Release -DLIBMEM_BUILD_STATIC=OFF
++    ;;
++  *-static)
++    build_variant ./ Release -DLIBMEM_BUILD_STATIC=ON
++    ;;
++  esac
++
++  # Copy headers
++  printf '[+] Copy headers\n'
++  mkdir -p -- "${_OUT_DIR}/include"
++  cp -rT -- "${_SOURCE_DIR}/include" "${_OUT_DIR}/include"
++
++  # Copy licenses
++  printf '[+] Copy licenses\n'
++  mkdir -p -- "${_OUT_DIR}/licenses"
++  function copy_licenses() {
++    local name=$1
++    local dir="${_SOURCE_DIR}/${2:-$name}"
++    find "$dir" -maxdepth 1 -type f \( -iname 'license*' -o -iname 'copying*' -o -iname 'exception*' \) | while read -r file; do
++      local file_name
++      file_name=$(basename -- "$file")
++      file_name=${file_name%.*} # remove extension
++      file_name=${file_name,,}  # lowercase
++      install -vD -m644 -- "$file" "${_OUT_DIR}/licenses/${name}-${file_name}.txt"
++    done
++  }
++  copy_licenses 'libmem' './'
++  copy_licenses 'capstone' 'external/capstone'
++  copy_licenses 'keystone' 'external/keystone'
++  copy_licenses 'LIEF' 'external/LIEF'
++  copy_licenses 'llvm' 'external/llvm'
++  copy_licenses 'injector' 'external/injector'
++
++  # Add stdlib information (glibc version, musl version)
++  printf '[+] Add stdlib information\n'
++  case "$_TARGET" in
++  *-linux-gnu-*)
++    # ldd --version can cause exit 141 when stdout is closed early.
++    { ldd --version || true; } | head -n1 | awk '{print $NF}' | install -vD -m644 -- /dev/stdin "${_OUT_DIR}/GLIBC_VERSION.txt"
++    ;;
++  *-linux-musl-*)
++    apk info musl 2>/dev/null | head -n1 | awk '{print $1}' | sed 's/^musl-//' | install -vD -m644 -- /dev/stdin "${_OUT_DIR}/MUSL_VERSION.txt"
++    ;;
++  *-windows-msvc-*)
++    printf '%s\n' "${VCTOOLSVERSION:-${VSCMD_ARG_VCVARS_VER:-}}" | install -vD -m644 -- /dev/stdin "${_OUT_DIR}/MSVC_VERSION.txt"
++    printf '%s\n' "${WINDOWSSDKVERSION:-}" | install -vD -m644 -- /dev/stdin "${_OUT_DIR}/WINSDK_VERSION.txt"
++    ;;
++  esac
++}
++
++# Ensure that the temporary directory exists and is set to an absolute path.
++# This directory will be automatically deleted when the script exits.
++# This function is idempotent.
++# Outputs:
++#   g_temp_dir: The absolute path to the temporary directory.
++function init_temp_dir() {
++  if [[ -v g_temp_dir ]]; then
++    return
++  fi
++
++  g_temp_dir=$(mktemp -d)
++  declare -gr g_temp_dir
++
++  # shellcheck disable=SC2317
++  function __temp_dir_cleanup() { rm -rf -- "$g_temp_dir"; }
++  trap __temp_dir_cleanup INT TERM EXIT
++}
++
++# Check if an array contains a value.
++# Inputs:
++#   $1: The value to check for.
++#   $2+: The array to check.
++# Returns:
++#   0 if the array contains the value,
++#   1 otherwise.
++function array_contains() {
++  local value=$1
++  local element
++  for element in "${@:2}"; do
++    if [[ "$element" == "$value" ]]; then
++      return 0
++    fi
++  done
++  return 1
++}
++
++eval 'main "$@";exit "$?"'
+diff --git a/tools/docker-env/.dockerignore b/tools/docker-env/.dockerignore
+new file mode 100644
+index 00000000..e44e123f
+--- /dev/null
++++ b/tools/docker-env/.dockerignore
+@@ -0,0 +1,2 @@
++.dockerignore
++*.Dockerfile
+diff --git a/tools/docker-env/entrypoint.sh b/tools/docker-env/entrypoint.sh
+new file mode 100644
+index 00000000..71559bd7
+--- /dev/null
++++ b/tools/docker-env/entrypoint.sh
+@@ -0,0 +1,18 @@
++#!/usr/bin/env sh
++set -eu
++
++groupmod -o -g "${PGID:-1000}" build
++usermod -o -u "${PUID:-1000}" build
++
++if [ ! -d /build ]; then
++  mkdir /build
++  chown build:build /build
++fi
++
++command=${1:-sh}
++command=$(which -- "${command}" || {
++  echo "${command}: not found" >&2
++  return 1
++})
++shift
++exec su build -s "$command" -- "$@"
+diff --git a/tools/docker-env/linux-gnu.Dockerfile b/tools/docker-env/linux-gnu.Dockerfile
+new file mode 100644
+index 00000000..00f0288f
+--- /dev/null
++++ b/tools/docker-env/linux-gnu.Dockerfile
+@@ -0,0 +1,20 @@
++FROM debian:buster
++
++# Create Debian Buster (glibc 2.28) image for building linux GNU binaries
++
++RUN apt-get update \
++    && DEBIAN_FRONTEND=noninteractive apt-get install -yqq --no-install-recommends \
++        build-essential \
++        ca-certificates \
++        python3 \
++        wget \
++    && rm -rf /var/lib/apt/lists/*
++
++RUN wget -O- "https://github.com/Kitware/CMake/releases/download/v3.27.8/cmake-3.27.8-linux-$(uname -m).tar.gz" \
++      | tar -xz --strip-components=1 -C /
++
++RUN groupadd -g 911 build \
++    && useradd -mN -u 911 -g 911 build
++
++COPY --chmod=700 entrypoint.sh /entrypoint.sh
++ENTRYPOINT ["/entrypoint.sh"]
+diff --git a/tools/docker-env/linux-musl.Dockerfile b/tools/docker-env/linux-musl.Dockerfile
+new file mode 100644
+index 00000000..c2e3703b
+--- /dev/null
++++ b/tools/docker-env/linux-musl.Dockerfile
+@@ -0,0 +1,16 @@
++FROM alpine:3.16
++
++# Create Alpine 3.16 (musl 1.2.3) image for building linux MUSL binaries
++
++RUN apk --update --no-cache add \
++        bash \
++        build-base \
++        cmake \
++        python3 \
++        shadow
++
++RUN addgroup -g 911 build \
++    && adduser -D -u 911 -G build build
++
++COPY --chmod=700 entrypoint.sh /entrypoint.sh
++ENTRYPOINT ["/entrypoint.sh"]
+diff --git a/tools/local-env/windows-msvc.sh b/tools/local-env/windows-msvc.sh
+new file mode 100755
+index 00000000..f72081df
+--- /dev/null
++++ b/tools/local-env/windows-msvc.sh
+@@ -0,0 +1,33 @@
++#!/usr/bin/env sh
++
++_arch=$1
++shift
++
++_host_arch=amd64
++case "$_arch" in
++i686) _target_arch=x86 ;;
++x86_64) _target_arch=amd64 ;;
++aarch64) _target_arch=arm64 ;;
++*)
++  echo "Unknown arch: $_arch"
++  exit 1
++  ;;
++esac
++if [ "$_host_arch" = "$_target_arch" ]; then
++  _vcvars_arch=$_host_arch
++else
++  _vcvars_arch="${_host_arch}_${_target_arch}"
++fi
++
++case "$_arch" in
++aarch64)
++  # aarch64 require v143 toolset (to support ARM64/ARM64EC and MT/MTd runtime)
++  _vcvars_ver=14.3
++  ;;
++*)
++  # default to v141 toolset (goal is to support the lowest version possible)
++  _vcvars_ver=14.1
++  ;;
++esac
++
++exec "$(dirname -- "$0")/../../external/vcvars-bash/vcvarsrun.sh" "$_vcvars_arch" -vcvars_ver="$_vcvars_ver" -- "$@"
+
+From cd6f347403731f728de123866012119051f79205 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Tue, 5 Dec 2023 18:10:28 +0100
+Subject: [PATCH 3/3] Add release workflow
+
+---
+ .github/workflows/release.yml | 110 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 110 insertions(+)
+ create mode 100644 .github/workflows/release.yml
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+new file mode 100644
+index 00000000..e73c04fc
+--- /dev/null
++++ b/.github/workflows/release.yml
+@@ -0,0 +1,110 @@
++---
++
++name: Release
++
++on:
++  push:
++    tags:
++      - '*'
++  workflow_dispatch:
++    inputs:
++      checkout-branch:
++        description: 'The branch or tag to checkout (same as workflow if not specified)'
++        required: false
++      targets:
++        description: 'The targets to build (regex, all if not specified)'
++        required: false
++
++jobs:
++
++  prepare:
++    runs-on: ubuntu-latest
++    outputs:
++      artifact-version: ${{ steps.set-version.outputs.artifact-version }}
++      release: ${{ steps.set-version.outputs.release }}
++      matrix: ${{ steps.set-matrix.outputs.matrix }}
++    steps:
++      - name: Set version
++        id: set-version
++        run: |
++          if [[ "$GITHUB_EVENT_NAME" == 'push' && "$GITHUB_REF_TYPE" == 'tag' ]]; then
++            artifact_version=${GITHUB_REF_NAME}
++            release=true
++          else
++            artifact_version='test'
++            release=false
++          fi
++          printf 'Artifact version: %s\n' "$artifact_version"
++          printf 'artifact-version=%s\n' "$artifact_version" >> "$GITHUB_OUTPUT"
++          printf 'Release: %s\n' "$release"
++          printf 'release=%s\n' "$release" >> "$GITHUB_OUTPUT"
++      - name: Set matrix
++        id: set-matrix
++        run: |
++          matrix=$(jq -Mcs \
++            --arg filter "^${INPUT_TARGETS:-.*}$" \
++            '{include: [.[] | select(.target|test($filter))]}' \
++            <<<'
++              {"target": "x86_64-linux-gnu-shared", "runs-on": "ubuntu-latest"}
++              {"target": "x86_64-linux-gnu-static", "runs-on": "ubuntu-latest"}
++              {"target": "x86_64-linux-musl-shared", "runs-on": "ubuntu-latest"}
++              {"target": "x86_64-linux-musl-static", "runs-on": "ubuntu-latest"}
++              {"target": "i686-windows-msvc-shared-md", "runs-on": "windows-2019"}
++              {"target": "i686-windows-msvc-static-md", "runs-on": "windows-2019"}
++              {"target": "i686-windows-msvc-static-mt", "runs-on": "windows-2019"}
++              {"target": "x86_64-windows-msvc-shared-md", "runs-on": "windows-2019"}
++              {"target": "x86_64-windows-msvc-static-md", "runs-on": "windows-2019"}
++              {"target": "x86_64-windows-msvc-static-mt", "runs-on": "windows-2019"}
++              {"target": "aarch64-windows-msvc-shared-md", "runs-on": "windows-2022"}
++              {"target": "aarch64-windows-msvc-static-md", "runs-on": "windows-2022"}
++              {"target": "aarch64-windows-msvc-static-mt", "runs-on": "windows-2022"}
++              '
++          )
++          printf 'Matrix: %s\n' "$(jq <<< "$matrix")"
++          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
++        env:
++          INPUT_TARGETS: ${{ inputs.targets }}
++
++  build:
++    needs: prepare
++    strategy:
++      fail-fast: false
++      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
++    runs-on: ${{ matrix.runs-on }}
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++        with:
++          ref: ${{ github.event.inputs.checkout-branch }}
++          submodules: true
++      - name: Build
++        run: ./tools/build-release.sh "$BUILD_TARGETS"
++        shell: bash
++        env:
++          BUILD_TARGETS: ${{ matrix.target }}
++          LIBMEM_BUILD_OUT_DIR: out/libmem-${{ needs.prepare.outputs.artifact-version }}-${{ matrix.target }}
++          MSYS: 'winsymlinks:sys' # fix symlink issues when cloning on Windows
++      - name: Upload artifact
++        uses: actions/upload-artifact@v3
++        with:
++          name: libmem-${{ needs.prepare.outputs.artifact-version }}-${{ matrix.target }}
++          path: out/libmem-${{ needs.prepare.outputs.artifact-version }}-${{ matrix.target }}.tar.gz
++
++  release:
++    needs: [prepare, build]
++    if: needs.prepare.outputs.release == 'true'
++    runs-on: ubuntu-latest
++    permissions:
++      contents: write # allows the action to create a release
++    steps:
++      - name: Download artifacts
++        uses: actions/download-artifact@v3
++      - name: Create release
++        uses: ncipollo/release-action@v1
++        with:
++          token: ${{ secrets.GITHUB_TOKEN }}
++          omitBody: true
++          prerelease: true
++          artifacts: libmem-*/libmem-*.tar.gz
++          artifactContentType: application/gzip
++          artifactErrorsFailBuild: true

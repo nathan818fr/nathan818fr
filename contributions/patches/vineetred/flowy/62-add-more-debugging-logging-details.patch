@@ -1,0 +1,51 @@
+From 6722a5c53267d2cf13829cadab291291f6cf4af8 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 1 Sep 2021 15:50:16 +0200
+Subject: [PATCH 1/2] Combine times and wallpapers in the initial logging
+
+---
+ flowy/src/lib.rs | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/flowy/src/lib.rs b/flowy/src/lib.rs
+index e67aaa2..0baf8b3 100644
+--- a/flowy/src/lib.rs
++++ b/flowy/src/lib.rs
+@@ -160,8 +160,10 @@ fn get_config_path() -> Result<PathBuf, Box<dyn Error>> {
+ pub fn set_times(config: Config) -> Result<(), Box<dyn Error>> {
+     let walls = config.walls;
+     let times = config.times;
+-    println!("Times - {:#?}", &times);
+-    println!("Paths - {:#?}", &walls);
++    println!("Wallpapers:");
++    for i in 0..times.len() {
++        println!("- {:?} = {:?}", times[i], &walls[i]);
++    }
+     // Will throw an error if Desktop Envt is not supported
+     let desktop_envt = DesktopEnvt::new().expect("Desktop envt could not be determined");
+     // Create an instance of last_index pointing to None
+
+From 4fd0aa4bfbcbf10fae825c43638b620309446c42 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 1 Sep 2021 15:52:24 +0200
+Subject: [PATCH 2/2] Log each time the wallpaper is modified
+
+---
+ flowy/src/lib.rs | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/flowy/src/lib.rs b/flowy/src/lib.rs
+index 0baf8b3..1d3ddf9 100644
+--- a/flowy/src/lib.rs
++++ b/flowy/src/lib.rs
+@@ -178,7 +178,9 @@ pub fn set_times(config: Config) -> Result<(), Box<dyn Error>> {
+             // Updating last_index to the current_index
+             last_index = Some(current_index);
+             // Set current wallpaper
+-            desktop_envt.set_wallpaper(&walls[current_index])?;
++            let wall = &walls[current_index];
++            println!("Set wallpaper: {:?} = {:?}", times[current_index], wall);
++            desktop_envt.set_wallpaper(wall)?;
+         }
+         // Check every t seconds
+         // Change this if you would like a more accurate daemon

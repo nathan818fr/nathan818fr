@@ -1,0 +1,38 @@
+From a0b102009330bdacd667166b7bc32bc2559318a9 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Mon, 27 Apr 2015 13:23:33 +0200
+Subject: [PATCH] Fix BadPacketException handling It is catched by
+ DecoderException and was not processed correctly by HandlerBoss So the
+ console was spammed when that exception is thrown
+
+---
+ .../src/main/java/net/md_5/bungee/netty/HandlerBoss.java  | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java b/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
+index d775f398c38..aff607cdcfb 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
+@@ -5,6 +5,7 @@
+ import io.netty.channel.ChannelHandlerContext;
+ import io.netty.channel.ChannelInboundHandlerAdapter;
+ import io.netty.handler.timeout.ReadTimeoutException;
++import io.netty.handler.codec.DecoderException;
+ import java.io.IOException;
+ import java.util.logging.Level;
+ import net.md_5.bungee.api.ProxyServer;
+@@ -97,9 +98,12 @@ public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws E
+             if ( cause instanceof ReadTimeoutException )
+             {
+                 ProxyServer.getInstance().getLogger().log( Level.WARNING, "{0} - read timed out", handler );
+-            } else if ( cause instanceof BadPacketException )
++            } else if ( cause instanceof DecoderException && cause.getCause() instanceof BadPacketException )
+             {
+-                ProxyServer.getInstance().getLogger().log( Level.WARNING, "{0} - bad packet ID, are mods in use!?", handler );
++                ProxyServer.getInstance().getLogger().log( Level.WARNING, "{0} - BadPacketException: {1}", new Object[]
++                {
++                    handler, cause.getCause().getMessage()
++                } );
+             } else if ( cause instanceof IOException )
+             {
+                 ProxyServer.getInstance().getLogger().log( Level.WARNING, "{0} - IOException: {1}", new Object[]

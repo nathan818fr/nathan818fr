@@ -1,0 +1,38 @@
+From 35d8b96209a691164e59666ad1e4a1aa18af3580 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 22 Jan 2021 17:36:46 +0100
+Subject: [PATCH] Cinnamenu@json: check for null entry.get_app_info()
+
+---
+ Cinnamenu@json/files/Cinnamenu@json/3.2/applet.js | 3 ++-
+ Cinnamenu@json/files/Cinnamenu@json/4.0/applet.js | 3 ++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/Cinnamenu@json/files/Cinnamenu@json/3.2/applet.js b/Cinnamenu@json/files/Cinnamenu@json/3.2/applet.js
+index e490d28ffec..db3fb04aa19 100644
+--- a/Cinnamenu@json/files/Cinnamenu@json/3.2/applet.js
++++ b/Cinnamenu@json/files/Cinnamenu@json/3.2/applet.js
+@@ -926,7 +926,8 @@ CinnamenuApplet.prototype = {
+     while ((nextType = iter.next()) !== CMenu.TreeItemType.INVALID) {
+       if (nextType === CMenu.TreeItemType.ENTRY) {
+         let entry = iter.get_entry();
+-        if (!entry.get_app_info().get_nodisplay()) {
++        let appInfo = entry.get_app_info();
++        if (appInfo && !appInfo.get_nodisplay()) {
+           let id = entry.get_desktop_file_id();
+           let app = this.appSystem.lookup_app(id);
+           if (rootDir && typeof rootDir.get_menu_id === 'function') {
+diff --git a/Cinnamenu@json/files/Cinnamenu@json/4.0/applet.js b/Cinnamenu@json/files/Cinnamenu@json/4.0/applet.js
+index 9c712a4b29f..97287fa2492 100644
+--- a/Cinnamenu@json/files/Cinnamenu@json/4.0/applet.js
++++ b/Cinnamenu@json/files/Cinnamenu@json/4.0/applet.js
+@@ -1715,7 +1715,8 @@ class Apps {
+         while ((nextType = iter.next()) !== CMenu.TreeItemType.INVALID) {
+             if (nextType === CMenu.TreeItemType.ENTRY) {
+                 const entry = iter.get_entry();
+-                if (!entry.get_app_info().get_nodisplay()) {
++                const appInfo = entry.get_app_info();
++                if (appInfo && !appInfo.get_nodisplay()) {
+                     const id = entry.get_desktop_file_id();
+                     const app = this.appThis.appSystem.lookup_app(id);
+                     let found = false;

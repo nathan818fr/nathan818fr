@@ -1,0 +1,24 @@
+From 71599cef389dbfe1bca303eb91e82ab5b02ace92 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 28 Sep 2019 15:14:59 +0200
+Subject: [PATCH] Fix EventEmitter memory leak
+
+https://github.com/CodeFoodPixels/node-promise-mysql/issues/127
+---
+ lib/pool.js | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/lib/pool.js b/lib/pool.js
+index d5c7721..0b54b19 100644
+--- a/lib/pool.js
++++ b/lib/pool.js
+@@ -40,7 +40,8 @@ class pool {
+         return promiseCallback.apply(this.pool, ['getConnection', arguments, this.returnArgumentsArray])
+             .then((_connection) => {
+                 const config = {
+-                    returnArgumentsArray: this.returnArgumentsArray
++                    returnArgumentsArray: this.returnArgumentsArray,
++                    reconnect: false
+                 };
+ 
+                 return new PoolConnection(config, _connection);

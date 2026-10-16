@@ -1,0 +1,145 @@
+From 424e69972c396e55a9460ffa7bb823ab076a6676 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sun, 20 Oct 2024 10:59:11 +0200
+Subject: [PATCH 1/2] Call all close callbacks
+
+When calling close() multiple times, only the last callback was called.
+---
+ lib/chrome.js | 17 ++++++++---------
+ test/close.js | 19 +++++++++++++++++++
+ 2 files changed, 27 insertions(+), 9 deletions(-)
+
+diff --git a/lib/chrome.js b/lib/chrome.js
+index b093d1e..7ebe41c 100644
+--- a/lib/chrome.js
++++ b/lib/chrome.js
+@@ -104,16 +104,11 @@ class Chrome extends EventEmitter {
+     close(callback) {
+         const closeWebSocket = (callback) => {
+             // don't close if it's already closed
+-            if (this._ws.readyState === 3) {
++            if (this._ws.readyState === 3) { // WebSocket.CLOSED = 3
+                 callback();
+             } else {
+-                // don't notify on user-initiated shutdown ('disconnect' event)
+-                this._ws.removeAllListeners('close');
+-                this._ws.once('close', () => {
+-                    this._ws.removeAllListeners();
+-                    this._handleConnectionClose();
+-                    callback();
+-                });
++                this._ws.once('close', () => callback());
++                this._skipDisconnectEvent = true; // don't notify on user-initiated shutdown ('disconnect' event)
+                 this._ws.close();
+             }
+         };
+@@ -239,9 +234,13 @@ class Chrome extends EventEmitter {
+                 const message = JSON.parse(data);
+                 this._handleMessage(message);
+             });
++            this._skipDisconnectEvent = false;
+             this._ws.on('close', (code) => {
++                this._ws.removeAllListeners();
+                 this._handleConnectionClose();
+-                this.emit('disconnect');
++                if (!this._skipDisconnectEvent) {
++                    this.emit('disconnect');
++                }
+             });
+             this._ws.on('error', (err) => {
+                 reject(err);
+diff --git a/test/close.js b/test/close.js
+index 69025f0..33b678a 100644
+--- a/test/close.js
++++ b/test/close.js
+@@ -19,6 +19,20 @@ describe('closing a connection', () => {
+                 assert(false);
+             });
+         });
++        it('should handle multiple close calls', (done) => {
++            Chrome((chrome) => {
++                let counter = 0;
++                chrome.close(() => ++counter);
++                chrome.close(() => {
++                    chrome.close(() => {
++                        assert(++counter === 2);
++                        done();
++                    });
++                });
++            }).on('error', () => {
++                assert(false);
++            });
++        });
+     });
+     describe('without callback', () => {
+         it('should allow a subsequent new connection', (done) => {
+@@ -36,5 +50,10 @@ describe('closing a connection', () => {
+                 assert(false);
+             });
+         });
++        it('should handle multiple close calls', async () => {
++            const chrome = await Chrome();
++            await Promise.all([chrome.close(), chrome.close()]); // concurrent
++            await chrome.close(); // already closed
++        });
+     });
+ });
+
+From d4bd7b935b3594d72aa0be3c97616f95fcd46aa2 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sun, 20 Oct 2024 09:42:12 +0200
+Subject: [PATCH 2/2] Reject events promises when the client is disconnected
+
+---
+ lib/api.js    | 15 ++++++++++++++-
+ test/event.js | 11 +++++++++++
+ 2 files changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/lib/api.js b/lib/api.js
+index 03fc75d..0279ae3 100644
+--- a/lib/api.js
++++ b/lib/api.js
+@@ -49,7 +49,20 @@ function addEvent(chrome, domainName, event) {
+             return () => chrome.removeListener(rawEventName, handler);
+         } else {
+             return new Promise((fulfill, reject) => {
+-                chrome.once(rawEventName, fulfill);
++                if (chrome._ws.readyState !== 1) { // WebSocket.OPEN = 1
++                    return reject(new Error('client disconnected'));
++                }
++                const onEvent = function () {
++                    chrome._ws.removeListener('close', onClose);
++                    fulfill.apply(null, arguments);
++                };
++                const onClose = () => {
++                    chrome.removeListener(rawEventName, onEvent);
++                    reject(new Error('client disconnected'));
++                };
++                chrome.once(rawEventName, onEvent);
++                // note: can't listen on client 'disconnect' event because it's not emitted on user-initiated close
++                chrome._ws.once('close', onClose);
+             });
+         }
+     };
+diff --git a/test/event.js b/test/event.js
+index 241436a..f1c2e56 100644
+--- a/test/event.js
++++ b/test/event.js
+@@ -91,6 +91,17 @@ describe('registering event', () => {
+                 chrome.send('Page.navigate', {'url': 'chrome://newtab/'});
+             });
+         });
++        it('should handle client disconnection', (done) => {
++            Chrome((chrome) => {
++                let error;
++                chrome.Network.requestWillBeSent().catch((err) => error = err).finally(() => {
++                    assert(error instanceof Error);
++                    assert(error.message === 'client disconnected');
++                    done();
++                });
++                chrome.close();
++            });
++        });
+     });
+     describe('passing a sessionId', () => {
+         it('should only listen for those events', async () => {

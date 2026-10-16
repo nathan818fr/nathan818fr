@@ -1,0 +1,30 @@
+From 8997182148dd33e981bffc9dc05701c17ee45fc2 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Thu, 2 Aug 2018 19:15:36 +0200
+Subject: [PATCH] Add an option to disable modules exports
+
+---
+ lib/loader.js | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/lib/loader.js b/lib/loader.js
+index b76c86de..6e1a8882 100644
+--- a/lib/loader.js
++++ b/lib/loader.js
+@@ -12,6 +12,7 @@ module.exports = function(content, map) {
+ 	var callback = this.async();
+ 	var query = loaderUtils.getOptions(this) || {};
+ 	var moduleMode = query.modules;
++	var disableModuleExports = query.disableExports || false;
+ 	var camelCaseKeys = query.camelCase;
+ 	var sourceMap = query.sourceMap || false;
+ 
+@@ -103,7 +104,7 @@ module.exports = function(content, map) {
+ 			}.bind(this));
+ 		}
+ 
+-		var exportJs = compileExports(result, importItemMatcher.bind(this), camelCaseKeys);
++		var exportJs = disableModuleExports ? '' : compileExports(result, importItemMatcher.bind(this), camelCaseKeys);
+ 		if (exportJs) {
+ 			exportJs = "exports.locals = " + exportJs + ";";
+ 		}

@@ -1,0 +1,25 @@
+From ef970d535bcbf65f59bfa506590e445f9e094669 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sun, 23 Feb 2020 01:34:21 +0100
+Subject: [PATCH] Fix lazy SchematicWriter with WorldCopyClipboard containing
+ AddBlocks
+
+---
+ .../sk89q/worldedit/extent/clipboard/io/SchematicWriter.java  | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/SchematicWriter.java b/core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/SchematicWriter.java
+index 0765951fd..2610b0c73 100644
+--- a/core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/SchematicWriter.java
++++ b/core/src/main/java/com/sk89q/worldedit/extent/clipboard/io/SchematicWriter.java
+@@ -197,9 +197,7 @@ public void run(int x, int y, int z, BaseBlock block) {
+                                     int add = id >> 8;
+                                     if (!hasAdd) {
+                                         hasAdd = true;
+-                                        for (int i = 0; i < index >> 1; i++) {
+-                                            addOut.write(new byte[index >> 1]);
+-                                        }
++                                        addOut.write(new byte[index >> 1]);
+                                     }
+                                     if ((index & 1) == 1) {
+                                         addOut.write(addAcc[0] + (add << 4));

@@ -1,0 +1,22 @@
+From f6a5b4de4731a6a43a4b85f06f4f026c17607af2 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sun, 8 Jul 2018 16:49:11 +0200
+Subject: [PATCH] Fix direction in BadPacketException message
+
+---
+ .../main/java/net/md_5/bungee/protocol/MinecraftDecoder.java    | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+index e7cb3803428..ea44573d153 100644
+--- a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
++++ b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+@@ -34,7 +34,7 @@ protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) t
+ 
+                 if ( in.isReadable() )
+                 {
+-                    throw new BadPacketException( "Did not read all bytes from packet " + packet.getClass() + " " + packetId + " Protocol " + protocol + " Direction " + prot );
++                    throw new BadPacketException( "Did not read all bytes from packet " + packet.getClass() + " " + packetId + " Protocol " + protocol + " Direction " + prot.getDirection() );
+                 }
+             } else
+             {

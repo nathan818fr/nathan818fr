@@ -1,0 +1,205 @@
+From 3b14fd0cdac7dc9a6354f765ee6b380191538fab Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Tue, 8 Sep 2015 18:33:52 +0200
+Subject: [PATCH 1/2] add no-filename option for s3 publisher
+
+---
+ .../java/hudson/plugins/s3/Destination.java   | 10 ++++----
+ src/main/java/hudson/plugins/s3/Entry.java    |  8 ++++++-
+ .../hudson/plugins/s3/S3BucketPublisher.java  |  2 +-
+ .../java/hudson/plugins/s3/S3Profile.java     | 24 ++++++++++---------
+ .../hudson/plugins/s3/Entry/config.jelly      |  3 +++
+ .../plugins/s3/Entry/help-noFilename.html     |  6 +++++
+ 6 files changed, 36 insertions(+), 17 deletions(-)
+ create mode 100644 src/main/resources/hudson/plugins/s3/Entry/help-noFilename.html
+
+diff --git a/src/main/java/hudson/plugins/s3/Destination.java b/src/main/java/hudson/plugins/s3/Destination.java
+index 130884c8..fb23a927 100644
+--- a/src/main/java/hudson/plugins/s3/Destination.java
++++ b/src/main/java/hudson/plugins/s3/Destination.java
+@@ -22,14 +22,16 @@ public class Destination implements Serializable {
+   
+   public Destination(final String userBucketName, final String fileName) {
+     
+-    if (userBucketName == null || fileName == null) 
+-      throw new IllegalArgumentException("Not defined for null parameters: "+userBucketName+","+fileName);
++    if (userBucketName == null)
++      throw new IllegalArgumentException("Not defined for null parameters: "+userBucketName);
+     
+     final String[] bucketNameArray = userBucketName.split("/", 2);
+     
+     bucketName = bucketNameArray[0];
+-    
+-    if (bucketNameArray.length > 1) {
++
++    if (fileName == null) {
++        objectName = bucketNameArray[1];
++    } else if (bucketNameArray.length > 1) {
+         objectName = bucketNameArray[1] + "/" + fileName;
+     } else {
+         objectName = fileName;
+diff --git a/src/main/java/hudson/plugins/s3/Entry.java b/src/main/java/hudson/plugins/s3/Entry.java
+index 65ee36d3..a3c1f59a 100644
+--- a/src/main/java/hudson/plugins/s3/Entry.java
++++ b/src/main/java/hudson/plugins/s3/Entry.java
+@@ -60,10 +60,15 @@ public final class Entry implements Describable<Entry> {
+      */
+     public boolean flatten;
+ 
++    /**
++     * Never use filename, use destination bucket as full key
++     */
++    public boolean noFilename;
++
+     @DataBoundConstructor
+     public Entry(String bucket, String sourceFile, String storageClass, String selectedRegion,
+                  boolean noUploadOnFailure, boolean uploadFromSlave, boolean managedArtifacts,
+-                 boolean useServerSideEncryption, boolean flatten) {
++                 boolean useServerSideEncryption, boolean flatten, boolean noFilename) {
+         this.bucket = bucket;
+         this.sourceFile = sourceFile;
+         this.storageClass = storageClass;
+@@ -73,6 +78,7 @@ public Entry(String bucket, String sourceFile, String storageClass, String selec
+         this.managedArtifacts = managedArtifacts;
+         this.useServerSideEncryption = useServerSideEncryption;
+         this.flatten = flatten;
++        this.noFilename = noFilename;
+     }
+ 
+     public Descriptor<Entry> getDescriptor() {
+diff --git a/src/main/java/hudson/plugins/s3/S3BucketPublisher.java b/src/main/java/hudson/plugins/s3/S3BucketPublisher.java
+index 273c871c..6013d409 100644
+--- a/src/main/java/hudson/plugins/s3/S3BucketPublisher.java
++++ b/src/main/java/hudson/plugins/s3/S3BucketPublisher.java
+@@ -179,7 +179,7 @@ public boolean perform(AbstractBuild<?, ?> build,
+                 
+                 for (FilePath src : paths) {
+                     log(listener.getLogger(), "bucket=" + bucket + ", file=" + src.getName() + " region=" + selRegion + ", upload from slave=" + entry.uploadFromSlave + " managed="+ entry.managedArtifacts + " , server encryption "+entry.useServerSideEncryption);
+-                    records.add(profile.upload(build, listener, bucket, src, searchPathLength, escapedUserMetadata, storageClass, selRegion, entry.uploadFromSlave, entry.managedArtifacts, entry.useServerSideEncryption, entry.flatten));
++                    records.add(profile.upload(build, listener, bucket, src, searchPathLength, escapedUserMetadata, storageClass, selRegion, entry.uploadFromSlave, entry.managedArtifacts, entry.useServerSideEncryption, entry.flatten, entry.noFilename));
+                 }
+                 if (entry.managedArtifacts) {
+                     artifacts.addAll(records);
+diff --git a/src/main/java/hudson/plugins/s3/S3Profile.java b/src/main/java/hudson/plugins/s3/S3Profile.java
+index 6375be71..76bfe443 100644
+--- a/src/main/java/hudson/plugins/s3/S3Profile.java
++++ b/src/main/java/hudson/plugins/s3/S3Profile.java
+@@ -167,17 +167,19 @@ public void check() throws Exception {
+     }
+ 
+     public FingerprintRecord upload(AbstractBuild<?,?> build, final BuildListener listener, String bucketName, FilePath filePath, int searchPathLength, List<MetadataPair> userMetadata,
+-            String storageClass, String selregion, boolean uploadFromSlave, boolean managedArtifacts,boolean useServerSideEncryption, boolean flatten) throws IOException, InterruptedException {
++            String storageClass, String selregion, boolean uploadFromSlave, boolean managedArtifacts,boolean useServerSideEncryption, boolean flatten, boolean noFilename) throws IOException, InterruptedException {
+         if (filePath.isDirectory()) {
+             throw new IOException(filePath + " is a directory");
+         }
+ 
+         String fileName = null;
+-        if (flatten) {
+-            fileName = filePath.getName();
+-        } else {
+-            String relativeFileName = filePath.getRemote();
+-            fileName = relativeFileName.substring(searchPathLength);
++        if (!noFilename) {
++            if (flatten) {
++                fileName = filePath.getName();
++            } else {
++                String relativeFileName = filePath.getRemote();
++                fileName = relativeFileName.substring(searchPathLength);
++            }
+         }
+ 
+         Destination dest = new Destination(bucketName, fileName);
+@@ -207,7 +209,7 @@ public FingerprintRecord upload(AbstractBuild<?,?> build, final BuildListener li
+     }
+ 
+     public List<String> list(Run build, String bucket, String expandedFilter) {
+-        AmazonS3Client s3client = getClient();        
++        AmazonS3Client s3client = getClient();
+ 
+         String buildName = build.getDisplayName();
+         int buildID = build.getNumber();
+@@ -218,7 +220,7 @@ public List<String> list(Run build, String bucket, String expandedFilter) {
+         .withPrefix(dest.objectName);
+ 
+         List<String> files = Lists.newArrayList();
+-        
++
+         ObjectListing objectListing;
+         do {
+           objectListing = s3client.listObjects(listObjectsRequest);
+@@ -227,7 +229,7 @@ public List<String> list(Run build, String bucket, String expandedFilter) {
+             files.add(req.getKey());
+           }
+           listObjectsRequest.setMarker(objectListing.getNextMarker());
+-        } while (objectListing.isTruncated());        
++        } while (objectListing.isTruncated());
+         return files;
+       }
+ 
+@@ -238,7 +240,7 @@ public List<FingerprintRecord> downloadAll(Run build, List<FingerprintRecord> ar
+ 
+           FilenameSelector selector = new FilenameSelector();
+           selector.setName(expandedFilter);
+-          
++
+           List<FingerprintRecord> fingerprints = Lists.newArrayList();
+           for(FingerprintRecord record : artifacts) {
+               S3Artifact artifact = record.artifact;
+@@ -284,7 +286,7 @@ public String getDownloadURL(Run build, FingerprintRecord record) {
+           ResponseHeaderOverrides headers = new ResponseHeaderOverrides();
+           // let the browser use the last part of the name, not the full path
+           // when saving.
+-          String fileName = (new File(dest.objectName)).getName().trim(); 
++          String fileName = (new File(dest.objectName)).getName().trim();
+           headers.setContentDisposition("attachment; filename=\"" + fileName + "\"");
+           request.setResponseHeaders(headers);
+           URL url = getClient().generatePresignedUrl(request);
+diff --git a/src/main/resources/hudson/plugins/s3/Entry/config.jelly b/src/main/resources/hudson/plugins/s3/Entry/config.jelly
+index 1978cdee..af1c67ed 100644
+--- a/src/main/resources/hudson/plugins/s3/Entry/config.jelly
++++ b/src/main/resources/hudson/plugins/s3/Entry/config.jelly
+@@ -27,5 +27,8 @@
+         <f:entry field="flatten" title="Flatten directories">
+ 		    <f:checkbox />
+         </f:entry>
++        <f:entry field="noFilename" title="No filename">
++		    <f:checkbox />
++        </f:entry>
+ 
+ </j:jelly>
+diff --git a/src/main/resources/hudson/plugins/s3/Entry/help-noFilename.html b/src/main/resources/hudson/plugins/s3/Entry/help-noFilename.html
+new file mode 100644
+index 00000000..cc411497
+--- /dev/null
++++ b/src/main/resources/hudson/plugins/s3/Entry/help-noFilename.html
+@@ -0,0 +1,6 @@
++<div>
++    When enabled, Jenkins will ignore the source filename when uploading. So the
++    Destination bucket will be used as final key for the uploaded file.
++    Please note: only one source file must be selected (otherwise, only the first
++    file will be uploaded and others will be ignored)
++</div>
+
+From 07fd01c4a445210f8d01cd6bffa29d720a45c6c8 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Tue, 8 Sep 2015 18:47:53 +0200
+Subject: [PATCH 2/2] upload only first file with no-filename option enabled
+
+---
+ src/main/java/hudson/plugins/s3/S3BucketPublisher.java | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/main/java/hudson/plugins/s3/S3BucketPublisher.java b/src/main/java/hudson/plugins/s3/S3BucketPublisher.java
+index 6013d409..04d6da2e 100644
+--- a/src/main/java/hudson/plugins/s3/S3BucketPublisher.java
++++ b/src/main/java/hudson/plugins/s3/S3BucketPublisher.java
+@@ -180,6 +180,8 @@ public boolean perform(AbstractBuild<?, ?> build,
+                 for (FilePath src : paths) {
+                     log(listener.getLogger(), "bucket=" + bucket + ", file=" + src.getName() + " region=" + selRegion + ", upload from slave=" + entry.uploadFromSlave + " managed="+ entry.managedArtifacts + " , server encryption "+entry.useServerSideEncryption);
+                     records.add(profile.upload(build, listener, bucket, src, searchPathLength, escapedUserMetadata, storageClass, selRegion, entry.uploadFromSlave, entry.managedArtifacts, entry.useServerSideEncryption, entry.flatten, entry.noFilename));
++                    if (entry.noFilename)
++                        break;
+                 }
+                 if (entry.managedArtifacts) {
+                     artifacts.addAll(records);

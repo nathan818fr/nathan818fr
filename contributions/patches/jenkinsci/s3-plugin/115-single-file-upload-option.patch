@@ -1,0 +1,145 @@
+From 97737f6018411f4cf51fe66086b6d6e6f454eb73 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 24 Feb 2018 18:22:36 +0100
+Subject: [PATCH] Add singleFile option
+
+---
+ src/main/java/hudson/plugins/s3/Entry.java    | 10 ++++++++--
+ .../hudson/plugins/s3/S3BucketPublisher.java  |  2 +-
+ .../java/hudson/plugins/s3/S3Profile.java     | 19 +++++++++++++++++--
+ .../hudson/plugins/s3/Entry/config.jelly      |  3 +++
+ .../plugins/s3/Entry/help-singleFile.html     |  5 +++++
+ src/test/java/hudson/plugins/s3/S3Test.java   |  2 +-
+ 6 files changed, 35 insertions(+), 6 deletions(-)
+ create mode 100644 src/main/resources/hudson/plugins/s3/Entry/help-singleFile.html
+
+diff --git a/src/main/java/hudson/plugins/s3/Entry.java b/src/main/java/hudson/plugins/s3/Entry.java
+index 54d0c746..e2b53ffa 100644
+--- a/src/main/java/hudson/plugins/s3/Entry.java
++++ b/src/main/java/hudson/plugins/s3/Entry.java
+@@ -69,6 +69,11 @@ public final class Entry implements Describable<Entry> {
+      */
+     public boolean flatten;
+ 
++    /**
++     * Upload a single file (so the file-name is not appended to the destination bucket)
++     */
++    public boolean singleFile;
++
+     /**
+     * use GZIP to compress files
+     */
+@@ -93,8 +98,8 @@ public final class Entry implements Describable<Entry> {
+     @DataBoundConstructor
+     public Entry(String bucket, String sourceFile, String excludedFile, String storageClass, String selectedRegion,
+                  boolean noUploadOnFailure, boolean uploadFromSlave, boolean managedArtifacts,
+-                 boolean useServerSideEncryption, boolean flatten, boolean gzipFiles, boolean keepForever,
+-                 boolean showDirectlyInBrowser, List<MetadataPair> userMetadata) {
++                 boolean useServerSideEncryption, boolean flatten, boolean singleFile, boolean gzipFiles,
++                 boolean keepForever, boolean showDirectlyInBrowser, List<MetadataPair> userMetadata) {
+         this.bucket = bucket;
+         this.sourceFile = sourceFile;
+         this.excludedFile = excludedFile;
+@@ -105,6 +110,7 @@ public Entry(String bucket, String sourceFile, String excludedFile, String stora
+         this.managedArtifacts = managedArtifacts;
+         this.useServerSideEncryption = useServerSideEncryption;
+         this.flatten = flatten;
++        this.singleFile = singleFile;
+         this.gzipFiles = gzipFiles;
+         this.keepForever = keepForever;
+         this.userMetadata = userMetadata;
+diff --git a/src/main/java/hudson/plugins/s3/S3BucketPublisher.java b/src/main/java/hudson/plugins/s3/S3BucketPublisher.java
+index e2a1000b..80890df7 100644
+--- a/src/main/java/hudson/plugins/s3/S3BucketPublisher.java
++++ b/src/main/java/hudson/plugins/s3/S3BucketPublisher.java
+@@ -248,7 +248,7 @@ public void perform(@Nonnull Run<?, ?> run, @Nonnull FilePath ws, @Nonnull Launc
+                         final int workspacePath = FileHelper.getSearchPathLength(ws.getRemote(),
+                                 startPath.trim(),
+                                 getProfile().isKeepStructure());
+-                        filenames.add(getFilename(path, entry.flatten, workspacePath));
++                        filenames.add(entry.singleFile ? null : getFilename(path, entry.flatten, workspacePath));
+                         log(console, "bucket=" + bucket + ", file=" + path.getName() + " region=" + selRegion + ", will be uploaded from slave=" + entry.uploadFromSlave + " managed=" + entry.managedArtifacts + " , server encryption " + entry.useServerSideEncryption);
+                     }
+                 }
+diff --git a/src/main/java/hudson/plugins/s3/S3Profile.java b/src/main/java/hudson/plugins/s3/S3Profile.java
+index 95074592..5dc5f19f 100644
+--- a/src/main/java/hudson/plugins/s3/S3Profile.java
++++ b/src/main/java/hudson/plugins/s3/S3Profile.java
+@@ -1,5 +1,6 @@
+ package hudson.plugins.s3;
+ 
++import com.google.common.base.Joiner;
+ import hudson.FilePath;
+ 
+ import java.io.IOException;
+@@ -116,7 +117,7 @@ public AmazonS3Client getClient(String region) {
+     }
+ 
+     public List<FingerprintRecord> upload(Run<?, ?> run,
+-                                    final String bucketName,
++                                    final String mainBucketName,
+                                     final List<FilePath> filePaths,
+                                     final List<String> fileNames,
+                                     final Map<String, String> userMetadata,
+@@ -131,7 +132,21 @@ public List<FingerprintRecord> upload(Run<?, ?> run,
+         try {
+             for (int i = 0; i < fileNames.size(); i++) {
+                 final FilePath filePath = filePaths.get(i);
+-                final String fileName = fileNames.get(i);
++                final String bucketName;
++                final String fileName;
++                if (fileNames.get(i) == null) {
++                    final String[] bucketNameArray = mainBucketName.split("/");
++                    if (bucketNameArray.length > 1) {
++                        fileName = bucketNameArray[bucketNameArray.length - 1];
++                        bucketNameArray[bucketNameArray.length - 1] = null;
++                        bucketName = Joiner.on('/').skipNulls().join(bucketNameArray);
++                    } else {
++                        throw new IllegalArgumentException("Destination bucket must contains file name when Single file is enabled");
++                    }
++                } else {
++                    bucketName = mainBucketName;
++                    fileName = fileNames.get(i);
++                }
+ 
+                 final Destination dest;
+                 final boolean produced;
+diff --git a/src/main/resources/hudson/plugins/s3/Entry/config.jelly b/src/main/resources/hudson/plugins/s3/Entry/config.jelly
+index 7046a7ed..8b716432 100644
+--- a/src/main/resources/hudson/plugins/s3/Entry/config.jelly
++++ b/src/main/resources/hudson/plugins/s3/Entry/config.jelly
+@@ -31,6 +31,9 @@
+         <f:entry field="flatten" title="Flatten directories">
+ 		    <f:checkbox />
+         </f:entry>
++        <f:entry field="singleFile" title="Single file">
++		        <f:checkbox />
++        </f:entry>
+         <f:entry field="gzipFiles" title="GZIP files">
+             <f:checkbox />
+         </f:entry>
+diff --git a/src/main/resources/hudson/plugins/s3/Entry/help-singleFile.html b/src/main/resources/hudson/plugins/s3/Entry/help-singleFile.html
+new file mode 100644
+index 00000000..1c2e26e2
+--- /dev/null
++++ b/src/main/resources/hudson/plugins/s3/Entry/help-singleFile.html
+@@ -0,0 +1,5 @@
++<div>
++    When enabled, Jenkins will only upload the first file matching the selector.
++    The filename is ignored and not appended to the 'Destination bucket'; so the Destination bucket will be used as
++    final key for the uploaded file.
++</div>
+\ No newline at end of file
+diff --git a/src/test/java/hudson/plugins/s3/S3Test.java b/src/test/java/hudson/plugins/s3/S3Test.java
+index 7700edde..22c784cf 100644
+--- a/src/test/java/hudson/plugins/s3/S3Test.java
++++ b/src/test/java/hudson/plugins/s3/S3Test.java
+@@ -72,7 +72,7 @@ public void multiplePublishersUseExistingActions() throws Exception {
+     }
+ 
+     private Entry entryForFile(String fileName) {
+-        return new Entry("bucket", fileName, "", "", "", false, false, true, false, false, false, false, false, null);
++        return new Entry("bucket", fileName, "", "", "", false, false, true, false, false, false, false, false, false, null);
+     }
+ 
+     private Builder stepCreatingFile(String fileName) {

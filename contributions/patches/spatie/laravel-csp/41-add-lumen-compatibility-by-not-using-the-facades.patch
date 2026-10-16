@@ -1,0 +1,30 @@
+From d0d96de9fff93939e232454a97c5ef52a7625114 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Thu, 2 Aug 2018 00:15:53 +0200
+Subject: [PATCH] Don't use facades in the lib
+
+---
+ src/CspServiceProvider.php | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/src/CspServiceProvider.php b/src/CspServiceProvider.php
+index 5e1a244..e270aa5 100644
+--- a/src/CspServiceProvider.php
++++ b/src/CspServiceProvider.php
+@@ -3,7 +3,6 @@
+ namespace Spatie\Csp;
+ 
+ use Spatie\Csp\Nonce\NonceGenerator;
+-use Illuminate\Support\Facades\Blade;
+ use Illuminate\Support\ServiceProvider;
+ 
+ class CspServiceProvider extends ServiceProvider
+@@ -22,7 +21,7 @@ public function boot()
+             return app(NonceGenerator::class)->generate();
+         });
+ 
+-        Blade::directive('nonce', function () {
++        $this->app->view->getEngineResolver()->resolve('blade')->getCompiler()->directive('nonce', function () {
+             return '<?php echo "nonce=\"" . csp_nonce() . "\""; ?>';
+         });
+     }

@@ -1,0 +1,2112 @@
+From a905b080c9650fb1f0ae4e836841b7c1d501f7f9 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 03:08:25 +0100
+Subject: [PATCH 01/14] Add a function to disable the use of raw input per
+ window (support X11)
+
+---
+ src/cocoa_window.m |  4 ++++
+ src/internal.h     |  2 ++
+ src/null_window.c  |  4 ++++
+ src/win32_window.c |  5 +++++
+ src/window.c       | 19 ++++++++++++++++++-
+ src/wl_window.c    |  4 ++++
+ src/x11_window.c   | 21 ++++++++++++++++++---
+ 7 files changed, 55 insertions(+), 4 deletions(-)
+
+diff --git a/src/cocoa_window.m b/src/cocoa_window.m
+index 9c018eb8b5..dae934ddfd 100644
+--- a/src/cocoa_window.m
++++ b/src/cocoa_window.m
+@@ -1552,6 +1552,10 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+     [window->ns.object setAlphaValue:opacity];
+ }
+ 
++void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
++{
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     if (!initializeAppKit())
+diff --git a/src/internal.h b/src/internal.h
+index 7be2b267cb..8cc47a354f 100644
+--- a/src/internal.h
++++ b/src/internal.h
+@@ -390,6 +390,7 @@ struct _GLFWwindow
+     char                keys[GLFW_KEY_LAST + 1];
+     // Virtual cursor position when cursor is disabled
+     double              virtualCursorPosX, virtualCursorPosY;
++    GLFWbool            useRawInput;
+ 
+     _GLFWcontext        context;
+ 
+@@ -666,6 +667,7 @@ void _glfwPlatformSetWindowResizable(_GLFWwindow* window, GLFWbool enabled);
+ void _glfwPlatformSetWindowDecorated(_GLFWwindow* window, GLFWbool enabled);
+ void _glfwPlatformSetWindowFloating(_GLFWwindow* window, GLFWbool enabled);
+ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity);
++void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled);
+ 
+ void _glfwPlatformPollEvents(void);
+ void _glfwPlatformWaitEvents(void);
+diff --git a/src/null_window.c b/src/null_window.c
+index 6a54cfe56e..7cc7f199db 100644
+--- a/src/null_window.c
++++ b/src/null_window.c
+@@ -196,6 +196,10 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ {
+ }
+ 
++void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
++{
++}
++
+ void _glfwPlatformShowWindow(_GLFWwindow* window)
+ {
+ }
+diff --git a/src/win32_window.c b/src/win32_window.c
+index 796ae150e0..9571c06823 100644
+--- a/src/win32_window.c
++++ b/src/win32_window.c
+@@ -1843,6 +1843,11 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+     }
+ }
+ 
++void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
++{
++    // TODO
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     MSG msg;
+diff --git a/src/window.c b/src/window.c
+index 4e365cb476..ecd9d71170 100644
+--- a/src/window.c
++++ b/src/window.c
+@@ -203,6 +203,7 @@ GLFWAPI GLFWwindow* glfwCreateWindow(int width, int height,
+     window->floating    = wndconfig.floating;
+     window->focusOnShow = wndconfig.focusOnShow;
+     window->cursorMode  = GLFW_CURSOR_NORMAL;
++    window->useRawInput = GLFW_TRUE;
+ 
+     window->minwidth    = GLFW_DONT_CARE;
+     window->minheight   = GLFW_DONT_CARE;
+@@ -970,6 +971,23 @@ GLFWAPI void* glfwGetWindowUserPointer(GLFWwindow* handle)
+     return window->userPointer;
+ }
+ 
++GLFWAPI int glfwGetWindowUseRawInput(GLFWwindow* handle)
++{
++    _GLFWwindow* window = (_GLFWwindow*) handle;
++    assert(window != NULL);
++
++    return window->useRawInput;
++}
++
++GLFWAPI void glfwSetWindowUseRawInput(GLFWwindow* handle,
++                                      int value)
++{
++    _GLFWwindow* window = (_GLFWwindow*) handle;
++    assert(window != NULL);
++
++    _glfwPlatformSetWindowUseRawInput(window, value ? GLFW_TRUE : GLFW_FALSE);
++}
++
+ GLFWAPI GLFWwindowposfun glfwSetWindowPosCallback(GLFWwindow* handle,
+                                                   GLFWwindowposfun cbfun)
+ {
+@@ -1110,4 +1128,3 @@ GLFWAPI void glfwPostEmptyEvent(void)
+ 
+     _glfwPlatformPostEmptyEvent();
+ }
+-
+diff --git a/src/wl_window.c b/src/wl_window.c
+index 98a646590f..b5303bc11a 100644
+--- a/src/wl_window.c
++++ b/src/wl_window.c
+@@ -1304,6 +1304,10 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ {
+ }
+ 
++void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
++{
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     handleEvents(0);
+diff --git a/src/x11_window.c b/src/x11_window.c
+index 5e9161072e..375a4dbf33 100644
+--- a/src/x11_window.c
++++ b/src/x11_window.c
+@@ -26,6 +26,7 @@
+ //========================================================================
+ 
+ #include "internal.h"
++#include "x11_platform.h"
+ 
+ #include <X11/cursorfont.h>
+ #include <X11/Xmd.h>
+@@ -535,7 +536,7 @@ static void updateCursorImage(_GLFWwindow* window)
+ //
+ static void disableCursor(_GLFWwindow* window)
+ {
+-    if (_glfw.x11.xi.available)
++    if (_glfw.x11.xi.available && window->useRawInput)
+     {
+         XIEventMask em;
+         unsigned char mask[XIMaskLen(XI_RawMotion)] = { 0 };
+@@ -566,7 +567,7 @@ static void disableCursor(_GLFWwindow* window)
+ //
+ static void enableCursor(_GLFWwindow* window)
+ {
+-    if (_glfw.x11.xi.available)
++    if (_glfw.x11.xi.available && window->useRawInput)
+     {
+         XIEventMask em;
+         unsigned char mask[] = { 0 };
+@@ -1192,6 +1193,7 @@ static void processEvent(XEvent *event)
+             _GLFWwindow* window = _glfw.x11.disabledCursorWindow;
+ 
+             if (window &&
++                window->useRawInput &&
+                 event->xcookie.extension == _glfw.x11.xi.majorOpcode &&
+                 XGetEventData(_glfw.x11.display, &event->xcookie) &&
+                 event->xcookie.evtype == XI_RawMotion)
+@@ -1492,7 +1494,7 @@ static void processEvent(XEvent *event)
+                 {
+                     if (_glfw.x11.disabledCursorWindow != window)
+                         return;
+-                    if (_glfw.x11.xi.available)
++                    if (_glfw.x11.xi.available && window->useRawInput)
+                         return;
+ 
+                     const int dx = x - window->x11.lastCursorPosX;
+@@ -2652,6 +2654,19 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+                     PropModeReplace, (unsigned char*) &value, 1);
+ }
+ 
++void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
++{
++    if (window->useRawInput != enabled)
++    {
++        int update = (_glfw.x11.disabledCursorWindow == window && _glfw.x11.xi.available);
++        if (update)
++            enableCursor(window);
++        window->useRawInput = enabled;
++        if (update)
++            disableCursor(window);
++    }
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     _GLFWwindow* window;
+
+From ec6eb3cb83eb34df4e37fdbb53391883bb7624f4 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 03:14:29 +0100
+Subject: [PATCH 02/14] Change the value of useRawInput even on unsupported
+ platforms
+
+---
+ src/cocoa_window.m | 1 +
+ src/null_window.c  | 1 +
+ src/win32_window.c | 1 +
+ src/wl_window.c    | 1 +
+ 4 files changed, 4 insertions(+)
+
+diff --git a/src/cocoa_window.m b/src/cocoa_window.m
+index dae934ddfd..3c589ee107 100644
+--- a/src/cocoa_window.m
++++ b/src/cocoa_window.m
+@@ -1554,6 +1554,7 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ 
+ void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
+ {
++    window->useRawInput = enabled;
+ }
+ 
+ void _glfwPlatformPollEvents(void)
+diff --git a/src/null_window.c b/src/null_window.c
+index 7cc7f199db..2535cdb997 100644
+--- a/src/null_window.c
++++ b/src/null_window.c
+@@ -198,6 +198,7 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ 
+ void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
+ {
++    window->useRawInput = enabled;
+ }
+ 
+ void _glfwPlatformShowWindow(_GLFWwindow* window)
+diff --git a/src/win32_window.c b/src/win32_window.c
+index 9571c06823..f3466563cc 100644
+--- a/src/win32_window.c
++++ b/src/win32_window.c
+@@ -1845,6 +1845,7 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ 
+ void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
+ {
++    window->useRawInput = enabled;
+     // TODO
+ }
+ 
+diff --git a/src/wl_window.c b/src/wl_window.c
+index b5303bc11a..642dce0171 100644
+--- a/src/wl_window.c
++++ b/src/wl_window.c
+@@ -1306,6 +1306,7 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ 
+ void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
+ {
++    window->useRawInput = enabled;
+ }
+ 
+ void _glfwPlatformPollEvents(void)
+
+From ac55b04da2beb969f4469ac6f05f57270b4a7229 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 03:34:30 +0100
+Subject: [PATCH 03/14] Support useRawInput option on windows
+
+---
+ src/win32_window.c | 30 +++++++++++++++++++++++-------
+ 1 file changed, 23 insertions(+), 7 deletions(-)
+
+diff --git a/src/win32_window.c b/src/win32_window.c
+index f3466563cc..655acd33fa 100644
+--- a/src/win32_window.c
++++ b/src/win32_window.c
+@@ -290,7 +290,7 @@ static void disableCursor(_GLFWwindow* window)
+     centerCursor(window);
+     updateClipRect(window);
+ 
+-    if (!RegisterRawInputDevices(&rid, 1, sizeof(rid)))
++    if (window->useRawInput && !RegisterRawInputDevices(&rid, 1, sizeof(rid)))
+     {
+         _glfwInputErrorWin32(GLFW_PLATFORM_ERROR,
+                              "Win32: Failed to register raw input device");
+@@ -310,7 +310,7 @@ static void enableCursor(_GLFWwindow* window)
+                               _glfw.win32.restoreCursorPosY);
+     updateCursorImage(window);
+ 
+-    if (!RegisterRawInputDevices(&rid, 1, sizeof(rid)))
++    if (window->useRawInput && !RegisterRawInputDevices(&rid, 1, sizeof(rid)))
+     {
+         _glfwInputErrorWin32(GLFW_PLATFORM_ERROR,
+                              "Win32: Failed to remove raw input device");
+@@ -825,9 +825,18 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
+ 
+             // Disabled cursor motion input is provided by WM_INPUT
+             if (window->cursorMode == GLFW_CURSOR_DISABLED)
+-                break;
++            {
++                if (_glfw.win32.disabledCursorWindow != window || window->useRawInput)
++                    break;
+ 
+-            _glfwInputCursorPos(window, x, y);
++                const int dx = x - window->win32.lastCursorPosX;
++                const int dy = y - window->win32.lastCursorPosY;
++                _glfwInputCursorPos(window,
++                                    window->virtualCursorPosX + dx,
++                                    window->virtualCursorPosY + dy);
++            }
++            else
++                _glfwInputCursorPos(window, x, y);
+ 
+             window->win32.lastCursorPosX = x;
+             window->win32.lastCursorPosY = y;
+@@ -856,7 +865,7 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
+             int dx, dy;
+ 
+             // Only process input when disabled cursor mode is applied
+-            if (_glfw.win32.disabledCursorWindow != window)
++            if (_glfw.win32.disabledCursorWindow != window || !window->useRawInput)
+                 break;
+ 
+             GetRawInputData(ri, RID_INPUT, NULL, &size, sizeof(RAWINPUTHEADER));
+@@ -1845,8 +1854,15 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ 
+ void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
+ {
+-    window->useRawInput = enabled;
+-    // TODO
++    if (window->useRawInput != enabled)
++    {
++        int update = (_glfw.win32.disabledCursorWindow == window);
++        if (update)
++            enableCursor(window);
++        window->useRawInput = enabled;
++        if (update)
++            disableCursor(window);
++    }
+ }
+ 
+ void _glfwPlatformPollEvents(void)
+
+From 5733b4a389a481605538df57b5cb7bd2f0452a21 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 04:34:44 +0100
+Subject: [PATCH 04/14] Add glfwRawInputSupported
+
+---
+ src/cocoa_window.m | 5 +++++
+ src/input.c        | 5 +++++
+ src/internal.h     | 1 +
+ src/null_window.c  | 5 +++++
+ src/win32_window.c | 5 +++++
+ src/wl_window.c    | 5 +++++
+ src/x11_window.c   | 5 +++++
+ 7 files changed, 31 insertions(+)
+
+diff --git a/src/cocoa_window.m b/src/cocoa_window.m
+index 3c589ee107..9a6a1032a1 100644
+--- a/src/cocoa_window.m
++++ b/src/cocoa_window.m
+@@ -1557,6 +1557,11 @@ void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
+     window->useRawInput = enabled;
+ }
+ 
++GLFWbool _glfwPlatformRawInputSupported(void)
++{
++    return GLFW_FALSE;
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     if (!initializeAppKit())
+diff --git a/src/input.c b/src/input.c
+index b0bb3de470..2186fdd710 100644
+--- a/src/input.c
++++ b/src/input.c
+@@ -1305,3 +1305,8 @@ GLFWAPI uint64_t glfwGetTimerFrequency(void)
+     return _glfwPlatformGetTimerFrequency();
+ }
+ 
++GLFWAPI int glfwRawInputSupported(void)
++{
++    _GLFW_REQUIRE_INIT_OR_RETURN(0);
++    return _glfwPlatformRawInputSupported();
++}
+diff --git a/src/internal.h b/src/internal.h
+index 8cc47a354f..79ff176901 100644
+--- a/src/internal.h
++++ b/src/internal.h
+@@ -623,6 +623,7 @@ void _glfwPlatformUpdateGamepadGUID(char* guid);
+ 
+ uint64_t _glfwPlatformGetTimerValue(void);
+ uint64_t _glfwPlatformGetTimerFrequency(void);
++GLFWbool _glfwPlatformRawInputSupported(void);
+ 
+ int _glfwPlatformCreateWindow(_GLFWwindow* window,
+                               const _GLFWwndconfig* wndconfig,
+diff --git a/src/null_window.c b/src/null_window.c
+index 2535cdb997..831c27da30 100644
+--- a/src/null_window.c
++++ b/src/null_window.c
+@@ -201,6 +201,11 @@ void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
+     window->useRawInput = enabled;
+ }
+ 
++GLFWbool _glfwPlatformRawInputSupported(void)
++{
++    return GLFW_FALSE;
++}
++
+ void _glfwPlatformShowWindow(_GLFWwindow* window)
+ {
+ }
+diff --git a/src/win32_window.c b/src/win32_window.c
+index 655acd33fa..5ff1e00adb 100644
+--- a/src/win32_window.c
++++ b/src/win32_window.c
+@@ -1865,6 +1865,11 @@ void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
+     }
+ }
+ 
++GLFWbool _glfwPlatformRawInputSupported(void)
++{
++    return GLFW_TRUE;
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     MSG msg;
+diff --git a/src/wl_window.c b/src/wl_window.c
+index 642dce0171..fa0e63973a 100644
+--- a/src/wl_window.c
++++ b/src/wl_window.c
+@@ -1309,6 +1309,11 @@ void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
+     window->useRawInput = enabled;
+ }
+ 
++GLFWbool _glfwPlatformRawInputSupported(void)
++{
++    return GLFW_FALSE;
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     handleEvents(0);
+diff --git a/src/x11_window.c b/src/x11_window.c
+index 375a4dbf33..dac0960951 100644
+--- a/src/x11_window.c
++++ b/src/x11_window.c
+@@ -2667,6 +2667,11 @@ void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
+     }
+ }
+ 
++GLFWbool _glfwPlatformRawInputSupported(void)
++{
++    return _glfw.x11.xi.available;
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     _GLFWwindow* window;
+
+From b252eab235a10b9839bd1af36f59b36311257a27 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 04:59:08 +0100
+Subject: [PATCH 05/14] Whoops, fix import mistake
+
+---
+ src/x11_window.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/src/x11_window.c b/src/x11_window.c
+index dac0960951..9704839dbf 100644
+--- a/src/x11_window.c
++++ b/src/x11_window.c
+@@ -26,7 +26,6 @@
+ //========================================================================
+ 
+ #include "internal.h"
+-#include "x11_platform.h"
+ 
+ #include <X11/cursorfont.h>
+ #include <X11/Xmd.h>
+
+From b51f5df076fe0dc00c2b1b7e9954521c21c3fa01 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 05:22:33 +0100
+Subject: [PATCH 06/14] Add prototypes to glfw3.h
+
+---
+ include/GLFW/glfw3.h | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/include/GLFW/glfw3.h b/include/GLFW/glfw3.h
+index 2c0a3c2728..f90e4d40bc 100644
+--- a/include/GLFW/glfw3.h
++++ b/include/GLFW/glfw3.h
+@@ -3415,6 +3415,21 @@ GLFWAPI void glfwSetWindowUserPointer(GLFWwindow* window, void* pointer);
+  */
+ GLFWAPI void* glfwGetWindowUserPointer(GLFWwindow* window);
+ 
++/*!
++ * TODO
++ */
++GLFWAPI int glfwGetWindowUseRawInput(GLFWwindow* handle);
++
++/*!
++ * TODO
++ */
++GLFWAPI void glfwSetWindowUseRawInput(GLFWwindow* handle, int value);
++
++/*!
++ * TODO
++ */
++GLFWAPI int glfwRawInputSupported(void);
++
+ /*! @brief Sets the position callback for the specified window.
+  *
+  *  This function sets the position callback of the specified window, which is
+
+From 86544e7c3af04dad905563b4285186c8e398f2b6 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 05:23:11 +0100
+Subject: [PATCH 07/14] Add raw input toggle key to cursor example
+
+---
+ tests/cursor.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/tests/cursor.c b/tests/cursor.c
+index 4cc74ad515..6d88c23cf8 100644
+--- a/tests/cursor.c
++++ b/tests/cursor.c
+@@ -163,6 +163,19 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action,
+             printf("(( cursor is hidden ))\n");
+             break;
+ 
++        case GLFW_KEY_R:
++            if (glfwGetWindowUseRawInput(window))
++            {
++                glfwSetWindowUseRawInput(window, GLFW_FALSE);
++                printf("(( raw input is disabled ))\n");
++            }
++            else
++            {
++                glfwSetWindowUseRawInput(window, GLFW_TRUE);
++                printf("(( raw input is enabled ))\n");
++            }
++            break;
++
+         case GLFW_KEY_SPACE:
+             swap_interval = 1 - swap_interval;
+             printf("(( swap interval: %i ))\n", swap_interval);
+
+From 02c2a77362f0aa1c7630dd8418c930c9f3f46c2e Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 17:50:13 +0100
+Subject: [PATCH 08/14] Use glfwSetInputMode to change raw input mode
+
+---
+ include/GLFW/glfw3.h | 11 +----------
+ src/input.c          |  4 ++++
+ src/window.c         | 17 -----------------
+ tests/cursor.c       |  6 +++---
+ 4 files changed, 8 insertions(+), 30 deletions(-)
+
+diff --git a/include/GLFW/glfw3.h b/include/GLFW/glfw3.h
+index f90e4d40bc..04d753a04f 100644
+--- a/include/GLFW/glfw3.h
++++ b/include/GLFW/glfw3.h
+@@ -1002,6 +1002,7 @@ extern "C" {
+ #define GLFW_STICKY_KEYS            0x00033002
+ #define GLFW_STICKY_MOUSE_BUTTONS   0x00033003
+ #define GLFW_LOCK_KEY_MODS          0x00033004
++#define GLFW_RAW_INPUT              0x00033005
+ 
+ #define GLFW_CURSOR_NORMAL          0x00034001
+ #define GLFW_CURSOR_HIDDEN          0x00034002
+@@ -3415,16 +3416,6 @@ GLFWAPI void glfwSetWindowUserPointer(GLFWwindow* window, void* pointer);
+  */
+ GLFWAPI void* glfwGetWindowUserPointer(GLFWwindow* window);
+ 
+-/*!
+- * TODO
+- */
+-GLFWAPI int glfwGetWindowUseRawInput(GLFWwindow* handle);
+-
+-/*!
+- * TODO
+- */
+-GLFWAPI void glfwSetWindowUseRawInput(GLFWwindow* handle, int value);
+-
+ /*!
+  * TODO
+  */
+diff --git a/src/input.c b/src/input.c
+index 2186fdd710..f3dbeec0c8 100644
+--- a/src/input.c
++++ b/src/input.c
+@@ -475,6 +475,8 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* handle, int mode)
+             return window->stickyMouseButtons;
+         case GLFW_LOCK_KEY_MODS:
+             return window->lockKeyMods;
++        case GLFW_RAW_INPUT:
++            return window->useRawInput;
+     }
+ 
+     _glfwInputError(GLFW_INVALID_ENUM, "Invalid input mode 0x%08X", mode);
+@@ -552,6 +554,8 @@ GLFWAPI void glfwSetInputMode(GLFWwindow* handle, int mode, int value)
+     }
+     else if (mode == GLFW_LOCK_KEY_MODS)
+         window->lockKeyMods = value ? GLFW_TRUE : GLFW_FALSE;
++    else if (mode == GLFW_RAW_INPUT)
++        _glfwPlatformSetWindowUseRawInput(window, value ? GLFW_TRUE : GLFW_FALSE);
+     else
+         _glfwInputError(GLFW_INVALID_ENUM, "Invalid input mode 0x%08X", mode);
+ }
+diff --git a/src/window.c b/src/window.c
+index ecd9d71170..40991ba3fb 100644
+--- a/src/window.c
++++ b/src/window.c
+@@ -971,23 +971,6 @@ GLFWAPI void* glfwGetWindowUserPointer(GLFWwindow* handle)
+     return window->userPointer;
+ }
+ 
+-GLFWAPI int glfwGetWindowUseRawInput(GLFWwindow* handle)
+-{
+-    _GLFWwindow* window = (_GLFWwindow*) handle;
+-    assert(window != NULL);
+-
+-    return window->useRawInput;
+-}
+-
+-GLFWAPI void glfwSetWindowUseRawInput(GLFWwindow* handle,
+-                                      int value)
+-{
+-    _GLFWwindow* window = (_GLFWwindow*) handle;
+-    assert(window != NULL);
+-
+-    _glfwPlatformSetWindowUseRawInput(window, value ? GLFW_TRUE : GLFW_FALSE);
+-}
+-
+ GLFWAPI GLFWwindowposfun glfwSetWindowPosCallback(GLFWwindow* handle,
+                                                   GLFWwindowposfun cbfun)
+ {
+diff --git a/tests/cursor.c b/tests/cursor.c
+index 6d88c23cf8..a64c0bf809 100644
+--- a/tests/cursor.c
++++ b/tests/cursor.c
+@@ -164,14 +164,14 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action,
+             break;
+ 
+         case GLFW_KEY_R:
+-            if (glfwGetWindowUseRawInput(window))
++            if (glfwGetInputMode(window, GLFW_RAW_INPUT))
+             {
+-                glfwSetWindowUseRawInput(window, GLFW_FALSE);
++                glfwSetInputMode(window, GLFW_RAW_INPUT, GLFW_FALSE);
+                 printf("(( raw input is disabled ))\n");
+             }
+             else
+             {
+-                glfwSetWindowUseRawInput(window, GLFW_TRUE);
++                glfwSetInputMode(window, GLFW_RAW_INPUT, GLFW_TRUE);
+                 printf("(( raw input is enabled ))\n");
+             }
+             break;
+
+From 1e71b9229c245252e70b98a52940354aac00dcf4 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 18:20:31 +0100
+Subject: [PATCH 09/14] Refactor and reorganize internal
+
+---
+ include/GLFW/glfw3.h | 10 +++++-----
+ src/cocoa_window.m   |  2 +-
+ src/input.c          | 14 +++++++-------
+ src/internal.h       |  4 ++--
+ src/null_window.c    |  2 +-
+ src/win32_window.c   |  2 +-
+ src/wl_window.c      |  2 +-
+ src/x11_window.c     |  2 +-
+ 8 files changed, 19 insertions(+), 19 deletions(-)
+
+diff --git a/include/GLFW/glfw3.h b/include/GLFW/glfw3.h
+index 04d753a04f..3d56fbff05 100644
+--- a/include/GLFW/glfw3.h
++++ b/include/GLFW/glfw3.h
+@@ -3416,11 +3416,6 @@ GLFWAPI void glfwSetWindowUserPointer(GLFWwindow* window, void* pointer);
+  */
+ GLFWAPI void* glfwGetWindowUserPointer(GLFWwindow* window);
+ 
+-/*!
+- * TODO
+- */
+-GLFWAPI int glfwRawInputSupported(void);
+-
+ /*! @brief Sets the position callback for the specified window.
+  *
+  *  This function sets the position callback of the specified window, which is
+@@ -3898,6 +3893,11 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* window, int mode);
+  */
+ GLFWAPI void glfwSetInputMode(GLFWwindow* window, int mode, int value);
+ 
++/*!
++ * TODO
++ */
++GLFWAPI int glfwRawInputSupported(void);
++
+ /*! @brief Returns the layout-specific name of the specified printable key.
+  *
+  *  This function returns the name of the specified printable key, encoded as
+diff --git a/src/cocoa_window.m b/src/cocoa_window.m
+index 9a6a1032a1..b2119881d9 100644
+--- a/src/cocoa_window.m
++++ b/src/cocoa_window.m
+@@ -1552,7 +1552,7 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+     [window->ns.object setAlphaValue:opacity];
+ }
+ 
+-void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
+ {
+     window->useRawInput = enabled;
+ }
+diff --git a/src/input.c b/src/input.c
+index f3dbeec0c8..fdc543f6e7 100644
+--- a/src/input.c
++++ b/src/input.c
+@@ -555,11 +555,17 @@ GLFWAPI void glfwSetInputMode(GLFWwindow* handle, int mode, int value)
+     else if (mode == GLFW_LOCK_KEY_MODS)
+         window->lockKeyMods = value ? GLFW_TRUE : GLFW_FALSE;
+     else if (mode == GLFW_RAW_INPUT)
+-        _glfwPlatformSetWindowUseRawInput(window, value ? GLFW_TRUE : GLFW_FALSE);
++        _glfwPlatformSetRawInput(window, value ? GLFW_TRUE : GLFW_FALSE);
+     else
+         _glfwInputError(GLFW_INVALID_ENUM, "Invalid input mode 0x%08X", mode);
+ }
+ 
++GLFWAPI int glfwRawInputSupported(void)
++{
++    _GLFW_REQUIRE_INIT_OR_RETURN(0);
++    return _glfwPlatformRawInputSupported();
++}
++
+ GLFWAPI const char* glfwGetKeyName(int key, int scancode)
+ {
+     _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
+@@ -1308,9 +1314,3 @@ GLFWAPI uint64_t glfwGetTimerFrequency(void)
+     _GLFW_REQUIRE_INIT_OR_RETURN(0);
+     return _glfwPlatformGetTimerFrequency();
+ }
+-
+-GLFWAPI int glfwRawInputSupported(void)
+-{
+-    _GLFW_REQUIRE_INIT_OR_RETURN(0);
+-    return _glfwPlatformRawInputSupported();
+-}
+diff --git a/src/internal.h b/src/internal.h
+index 79ff176901..bee1019c2f 100644
+--- a/src/internal.h
++++ b/src/internal.h
+@@ -597,6 +597,8 @@ const char* _glfwPlatformGetVersionString(void);
+ void _glfwPlatformGetCursorPos(_GLFWwindow* window, double* xpos, double* ypos);
+ void _glfwPlatformSetCursorPos(_GLFWwindow* window, double xpos, double ypos);
+ void _glfwPlatformSetCursorMode(_GLFWwindow* window, int mode);
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled);
++GLFWbool _glfwPlatformRawInputSupported(void);
+ int _glfwPlatformCreateCursor(_GLFWcursor* cursor,
+                               const GLFWimage* image, int xhot, int yhot);
+ int _glfwPlatformCreateStandardCursor(_GLFWcursor* cursor, int shape);
+@@ -623,7 +625,6 @@ void _glfwPlatformUpdateGamepadGUID(char* guid);
+ 
+ uint64_t _glfwPlatformGetTimerValue(void);
+ uint64_t _glfwPlatformGetTimerFrequency(void);
+-GLFWbool _glfwPlatformRawInputSupported(void);
+ 
+ int _glfwPlatformCreateWindow(_GLFWwindow* window,
+                               const _GLFWwndconfig* wndconfig,
+@@ -668,7 +669,6 @@ void _glfwPlatformSetWindowResizable(_GLFWwindow* window, GLFWbool enabled);
+ void _glfwPlatformSetWindowDecorated(_GLFWwindow* window, GLFWbool enabled);
+ void _glfwPlatformSetWindowFloating(_GLFWwindow* window, GLFWbool enabled);
+ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity);
+-void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled);
+ 
+ void _glfwPlatformPollEvents(void);
+ void _glfwPlatformWaitEvents(void);
+diff --git a/src/null_window.c b/src/null_window.c
+index 831c27da30..cb976310eb 100644
+--- a/src/null_window.c
++++ b/src/null_window.c
+@@ -196,7 +196,7 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ {
+ }
+ 
+-void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
+ {
+     window->useRawInput = enabled;
+ }
+diff --git a/src/win32_window.c b/src/win32_window.c
+index 5ff1e00adb..484715072e 100644
+--- a/src/win32_window.c
++++ b/src/win32_window.c
+@@ -1852,7 +1852,7 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+     }
+ }
+ 
+-void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
+ {
+     if (window->useRawInput != enabled)
+     {
+diff --git a/src/wl_window.c b/src/wl_window.c
+index fa0e63973a..bd6ff880a7 100644
+--- a/src/wl_window.c
++++ b/src/wl_window.c
+@@ -1304,7 +1304,7 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ {
+ }
+ 
+-void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
+ {
+     window->useRawInput = enabled;
+ }
+diff --git a/src/x11_window.c b/src/x11_window.c
+index 9704839dbf..7d1951d59e 100644
+--- a/src/x11_window.c
++++ b/src/x11_window.c
+@@ -2653,7 +2653,7 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+                     PropModeReplace, (unsigned char*) &value, 1);
+ }
+ 
+-void _glfwPlatformSetWindowUseRawInput(_GLFWwindow* window, GLFWbool enabled)
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
+ {
+     if (window->useRawInput != enabled)
+     {
+
+From 2b55b79d63dfa94d510cfcaf4549beeaa507d57f Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 19:08:37 +0100
+Subject: [PATCH 10/14] Add documentation
+
+---
+ include/GLFW/glfw3.h | 46 ++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 40 insertions(+), 6 deletions(-)
+
+diff --git a/include/GLFW/glfw3.h b/include/GLFW/glfw3.h
+index 3d56fbff05..38bf41df59 100644
+--- a/include/GLFW/glfw3.h
++++ b/include/GLFW/glfw3.h
+@@ -3820,11 +3820,12 @@ GLFWAPI void glfwPostEmptyEvent(void);
+  *
+  *  This function returns the value of an input option for the specified window.
+  *  The mode must be one of @ref GLFW_CURSOR, @ref GLFW_STICKY_KEYS,
+- *  @ref GLFW_STICKY_MOUSE_BUTTONS or @ref GLFW_LOCK_KEY_MODS.
++ *  @ref GLFW_STICKY_MOUSE_BUTTONS, @ref GLFW_LOCK_KEY_MODS or
++ *  @ref GLFW_RAW_INPUT.
+  *
+  *  @param[in] window The window to query.
+  *  @param[in] mode One of `GLFW_CURSOR`, `GLFW_STICKY_KEYS`,
+- *  `GLFW_STICKY_MOUSE_BUTTONS` or `GLFW_LOCK_KEY_MODS`.
++ *  `GLFW_STICKY_MOUSE_BUTTONS`, `GLFW_LOCK_KEY_MODS` or `GLFW_RAW_INPUT`.
+  *
+  *  @errors Possible errors include @ref GLFW_NOT_INITIALIZED and @ref
+  *  GLFW_INVALID_ENUM.
+@@ -3843,7 +3844,8 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* window, int mode);
+  *
+  *  This function sets an input mode option for the specified window.  The mode
+  *  must be one of @ref GLFW_CURSOR, @ref GLFW_STICKY_KEYS,
+- *  @ref GLFW_STICKY_MOUSE_BUTTONS or @ref GLFW_LOCK_KEY_MODS.
++ *  @ref GLFW_STICKY_MOUSE_BUTTONS, @ref GLFW_LOCK_KEY_MODS or
++ *  @ref GLFW_RAW_INPUT.
+  *
+  *  If the mode is `GLFW_CURSOR`, the value must be one of the following cursor
+  *  modes:
+@@ -3875,9 +3877,14 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* window, int mode);
+  *  GLFW_MOD_CAPS_LOCK bit set when the event was generated with Caps Lock on,
+  *  and the @ref GLFW_MOD_NUM_LOCK bit when Num Lock was on.
+  *
++ *  If the mode is `GLFW_RAW_INPUT`, the value must be either `GLFW_TRUE` to
++ *  enable the use of raw input, or `GLFW_FALSE` to disable it.  If enabled and
++ *  supported by the machine, the program will retrieve high-definition mouse
++ *  movement when cursor is grabbed.
++ *
+  *  @param[in] window The window whose input mode to set.
+  *  @param[in] mode One of `GLFW_CURSOR`, `GLFW_STICKY_KEYS`,
+- *  `GLFW_STICKY_MOUSE_BUTTONS` or `GLFW_LOCK_KEY_MODS`.
++ *  `GLFW_STICKY_MOUSE_BUTTONS`, `GLFW_LOCK_KEY_MODS` or `GLFW_RAW_INPUT`.
+  *  @param[in] value The new value of the specified input mode.
+  *
+  *  @errors Possible errors include @ref GLFW_NOT_INITIALIZED, @ref
+@@ -3893,8 +3900,35 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* window, int mode);
+  */
+ GLFWAPI void glfwSetInputMode(GLFWwindow* window, int mode, int value);
+ 
+-/*!
+- * TODO
++/*! @brief Returns whether the raw input is supported.
++ *
++ * This function returns whether the raw input is supported by the current
++ * machine.
++ *
++ * Raw input allow to retrieve high-definition movement from mouse.
++ * Input from a high-definition mouse is much more precise than that from a
++ * standard mouse.  But often, they cannot be obtained through standard
++ * platforms API which transform mouse movement using their own improvements
++ * (like pointer acceleration).  Platform's improvements are ideal for pointer
++ * control but it is not so good for moving a first-person camera.  For this
++ * reason when the cursor of a window is grabbed by setting @ref GLFW_CURSOR
++ * to @ref GLFW_CURSOR_DISABLED, raw input is used.
++ *
++ * The use of raw input can be disabled using @ref glfwSetInputMode with
++ * @ref GLFW_RAW_INPUT mode.
++ *
++ *  @return `GLFW_TRUE` if high-definition mouse movement is supported, or
++ *  `GLFW_FALSE` otherwise.
++ *
++ *  @errors Possible errors include @ref GLFW_NOT_INITIALIZED.
++ *
++ *  @thread_safety This function may be called from any thread.
++ *
++ *  @sa @ref glfwSetInputMode
++ *
++ *  @since Added in version 3.3.
++ *
++ *  @ingroup input
+  */
+ GLFWAPI int glfwRawInputSupported(void);
+ 
+
+From 136a571e7921c1e9fe9e11cb3f4bcf45f3244b4c Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 19:12:04 +0100
+Subject: [PATCH 11/14] Add changelog and contributor entries to README
+
+---
+ README.md | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/README.md b/README.md
+index d2b25d0610..3235c73cb6 100644
+--- a/README.md
++++ b/README.md
+@@ -182,6 +182,7 @@ information on what to include when reporting a bug.
+ - Added `GLFW_OSMESA_CONTEXT_API` for creating OpenGL contexts with
+   [OSMesa](https://www.mesa3d.org/osmesa.html) (#281)
+ - Added `GenerateMappings.cmake` script for updating gamepad mappings
++- Added `GLFW_RAW_INPUT` input mode and `glfwRawInputSupported` function (#1401)
+ - Made `glfwCreateWindowSurface` emit an error when the window has a context
+   (#1194,#1205)
+ - Deprecated window parameter of clipboard string functions
+@@ -469,6 +470,7 @@ skills.
+  - Santi Zupancic
+  - Jonas Ådahl
+  - Lasse Öörni
++ - Nathan Poirier
+  - All the unmentioned and anonymous contributors in the GLFW community, for bug
+    reports, patches, feedback, testing and encouragement
+ 
+
+From d16134a108a2ac25ec60d0ddf5bf462984afa47e Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 14 Dec 2018 03:08:25 +0100
+Subject: [PATCH 12/14] Add GLFW_RAW_INPUT and glfwRawInputSupported
+
+This adds runtime per-window control of whether accelerated or raw mouse
+motion is provided when the cursor is disabled.
+
+Closes #1401.
+---
+ README.md            |  2 ++
+ include/GLFW/glfw3.h | 48 ++++++++++++++++++++++++++++++++++++++++----
+ src/cocoa_window.m   | 10 +++++++++
+ src/input.c          | 11 +++++++++-
+ src/internal.h       |  3 +++
+ src/null_window.c    | 10 +++++++++
+ src/win32_window.c   | 37 +++++++++++++++++++++++++++++-----
+ src/window.c         |  2 +-
+ src/wl_window.c      | 10 +++++++++
+ src/x11_window.c     | 25 ++++++++++++++++++++---
+ tests/cursor.c       | 13 ++++++++++++
+ 11 files changed, 157 insertions(+), 14 deletions(-)
+
+diff --git a/README.md b/README.md
+index f847b020f3..5f7045ab0d 100644
+--- a/README.md
++++ b/README.md
+@@ -182,6 +182,7 @@ information on what to include when reporting a bug.
+ - Added `GLFW_OSMESA_CONTEXT_API` for creating OpenGL contexts with
+   [OSMesa](https://www.mesa3d.org/osmesa.html) (#281)
+ - Added `GenerateMappings.cmake` script for updating gamepad mappings
++- Added `GLFW_RAW_INPUT` input mode and `glfwRawInputSupported` function (#1401)
+ - Made `glfwCreateWindowSurface` emit an error when the window has a context
+   (#1194,#1205)
+ - Deprecated window parameter of clipboard string functions
+@@ -489,6 +490,7 @@ skills.
+  - Santi Zupancic
+  - Jonas Ådahl
+  - Lasse Öörni
++ - Nathan Poirier
+  - All the unmentioned and anonymous contributors in the GLFW community, for bug
+    reports, patches, feedback, testing and encouragement
+ 
+diff --git a/include/GLFW/glfw3.h b/include/GLFW/glfw3.h
+index 35a781c935..9556cede67 100644
+--- a/include/GLFW/glfw3.h
++++ b/include/GLFW/glfw3.h
+@@ -1002,6 +1002,7 @@ extern "C" {
+ #define GLFW_STICKY_KEYS            0x00033002
+ #define GLFW_STICKY_MOUSE_BUTTONS   0x00033003
+ #define GLFW_LOCK_KEY_MODS          0x00033004
++#define GLFW_RAW_INPUT              0x00033005
+ 
+ #define GLFW_CURSOR_NORMAL          0x00034001
+ #define GLFW_CURSOR_HIDDEN          0x00034002
+@@ -3810,11 +3811,12 @@ GLFWAPI void glfwPostEmptyEvent(void);
+  *
+  *  This function returns the value of an input option for the specified window.
+  *  The mode must be one of @ref GLFW_CURSOR, @ref GLFW_STICKY_KEYS,
+- *  @ref GLFW_STICKY_MOUSE_BUTTONS or @ref GLFW_LOCK_KEY_MODS.
++ *  @ref GLFW_STICKY_MOUSE_BUTTONS, @ref GLFW_LOCK_KEY_MODS or
++ *  @ref GLFW_RAW_INPUT.
+  *
+  *  @param[in] window The window to query.
+  *  @param[in] mode One of `GLFW_CURSOR`, `GLFW_STICKY_KEYS`,
+- *  `GLFW_STICKY_MOUSE_BUTTONS` or `GLFW_LOCK_KEY_MODS`.
++ *  `GLFW_STICKY_MOUSE_BUTTONS`, `GLFW_LOCK_KEY_MODS` or `GLFW_RAW_INPUT`.
+  *
+  *  @errors Possible errors include @ref GLFW_NOT_INITIALIZED and @ref
+  *  GLFW_INVALID_ENUM.
+@@ -3833,7 +3835,8 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* window, int mode);
+  *
+  *  This function sets an input mode option for the specified window.  The mode
+  *  must be one of @ref GLFW_CURSOR, @ref GLFW_STICKY_KEYS,
+- *  @ref GLFW_STICKY_MOUSE_BUTTONS or @ref GLFW_LOCK_KEY_MODS.
++ *  @ref GLFW_STICKY_MOUSE_BUTTONS, @ref GLFW_LOCK_KEY_MODS or
++ *  @ref GLFW_RAW_INPUT.
+  *
+  *  If the mode is `GLFW_CURSOR`, the value must be one of the following cursor
+  *  modes:
+@@ -3865,9 +3868,14 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* window, int mode);
+  *  GLFW_MOD_CAPS_LOCK bit set when the event was generated with Caps Lock on,
+  *  and the @ref GLFW_MOD_NUM_LOCK bit when Num Lock was on.
+  *
++ *  If the mode is `GLFW_RAW_INPUT`, the value must be either `GLFW_TRUE` to
++ *  enable the use of raw input, or `GLFW_FALSE` to disable it.  If enabled and
++ *  supported by the machine, the program will retrieve high-definition mouse
++ *  movement when cursor is grabbed.
++ *
+  *  @param[in] window The window whose input mode to set.
+  *  @param[in] mode One of `GLFW_CURSOR`, `GLFW_STICKY_KEYS`,
+- *  `GLFW_STICKY_MOUSE_BUTTONS` or `GLFW_LOCK_KEY_MODS`.
++ *  `GLFW_STICKY_MOUSE_BUTTONS`, `GLFW_LOCK_KEY_MODS` or `GLFW_RAW_INPUT`.
+  *  @param[in] value The new value of the specified input mode.
+  *
+  *  @errors Possible errors include @ref GLFW_NOT_INITIALIZED, @ref
+@@ -3883,6 +3891,38 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* window, int mode);
+  */
+ GLFWAPI void glfwSetInputMode(GLFWwindow* window, int mode, int value);
+ 
++/*! @brief Returns whether the raw input is supported.
++ *
++ * This function returns whether the raw input is supported by the current
++ * machine.
++ *
++ * Raw input allow to retrieve high-definition movement from mouse.
++ * Input from a high-definition mouse is much more precise than that from a
++ * standard mouse.  But often, they cannot be obtained through standard
++ * platforms API which transform mouse movement using their own improvements
++ * (like pointer acceleration).  Platform's improvements are ideal for pointer
++ * control but it is not so good for moving a first-person camera.  For this
++ * reason when the cursor of a window is grabbed by setting @ref GLFW_CURSOR
++ * to @ref GLFW_CURSOR_DISABLED, raw input is used.
++ *
++ * The use of raw input can be disabled using @ref glfwSetInputMode with
++ * @ref GLFW_RAW_INPUT mode.
++ *
++ *  @return `GLFW_TRUE` if high-definition mouse movement is supported, or
++ *  `GLFW_FALSE` otherwise.
++ *
++ *  @errors Possible errors include @ref GLFW_NOT_INITIALIZED.
++ *
++ *  @thread_safety This function may be called from any thread.
++ *
++ *  @sa @ref glfwSetInputMode
++ *
++ *  @since Added in version 3.3.
++ *
++ *  @ingroup input
++ */
++GLFWAPI int glfwRawInputSupported(void);
++
+ /*! @brief Returns the layout-specific name of the specified printable key.
+  *
+  *  This function returns the name of the specified printable key, encoded as
+diff --git a/src/cocoa_window.m b/src/cocoa_window.m
+index 156b97b160..e3e20de793 100644
+--- a/src/cocoa_window.m
++++ b/src/cocoa_window.m
+@@ -1297,6 +1297,16 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+     [window->ns.object setAlphaValue:opacity];
+ }
+ 
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
++{
++    window->useRawInput = enabled;
++}
++
++GLFWbool _glfwPlatformRawInputSupported(void)
++{
++    return GLFW_FALSE;
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     for (;;)
+diff --git a/src/input.c b/src/input.c
+index 33ed060450..ef14fad53d 100644
+--- a/src/input.c
++++ b/src/input.c
+@@ -484,6 +484,8 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* handle, int mode)
+             return window->stickyMouseButtons;
+         case GLFW_LOCK_KEY_MODS:
+             return window->lockKeyMods;
++        case GLFW_RAW_INPUT:
++            return window->useRawInput;
+     }
+ 
+     _glfwInputError(GLFW_INVALID_ENUM, "Invalid input mode 0x%08X", mode);
+@@ -561,10 +563,18 @@ GLFWAPI void glfwSetInputMode(GLFWwindow* handle, int mode, int value)
+     }
+     else if (mode == GLFW_LOCK_KEY_MODS)
+         window->lockKeyMods = value ? GLFW_TRUE : GLFW_FALSE;
++    else if (mode == GLFW_RAW_INPUT)
++        _glfwPlatformSetRawInput(window, value ? GLFW_TRUE : GLFW_FALSE);
+     else
+         _glfwInputError(GLFW_INVALID_ENUM, "Invalid input mode 0x%08X", mode);
+ }
+ 
++GLFWAPI int glfwRawInputSupported(void)
++{
++    _GLFW_REQUIRE_INIT_OR_RETURN(0);
++    return _glfwPlatformRawInputSupported();
++}
++
+ GLFWAPI const char* glfwGetKeyName(int key, int scancode)
+ {
+     _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
+@@ -1313,4 +1323,3 @@ GLFWAPI uint64_t glfwGetTimerFrequency(void)
+     _GLFW_REQUIRE_INIT_OR_RETURN(0);
+     return _glfwPlatformGetTimerFrequency();
+ }
+-
+diff --git a/src/internal.h b/src/internal.h
+index e8df80a071..65d77cc179 100644
+--- a/src/internal.h
++++ b/src/internal.h
+@@ -390,6 +390,7 @@ struct _GLFWwindow
+     char                keys[GLFW_KEY_LAST + 1];
+     // Virtual cursor position when cursor is disabled
+     double              virtualCursorPosX, virtualCursorPosY;
++    GLFWbool            useRawInput;
+ 
+     _GLFWcontext        context;
+ 
+@@ -596,6 +597,8 @@ const char* _glfwPlatformGetVersionString(void);
+ void _glfwPlatformGetCursorPos(_GLFWwindow* window, double* xpos, double* ypos);
+ void _glfwPlatformSetCursorPos(_GLFWwindow* window, double xpos, double ypos);
+ void _glfwPlatformSetCursorMode(_GLFWwindow* window, int mode);
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled);
++GLFWbool _glfwPlatformRawInputSupported(void);
+ int _glfwPlatformCreateCursor(_GLFWcursor* cursor,
+                               const GLFWimage* image, int xhot, int yhot);
+ int _glfwPlatformCreateStandardCursor(_GLFWcursor* cursor, int shape);
+diff --git a/src/null_window.c b/src/null_window.c
+index 6a54cfe56e..cb976310eb 100644
+--- a/src/null_window.c
++++ b/src/null_window.c
+@@ -196,6 +196,16 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ {
+ }
+ 
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
++{
++    window->useRawInput = enabled;
++}
++
++GLFWbool _glfwPlatformRawInputSupported(void)
++{
++    return GLFW_FALSE;
++}
++
+ void _glfwPlatformShowWindow(_GLFWwindow* window)
+ {
+ }
+diff --git a/src/win32_window.c b/src/win32_window.c
+index 77338468f4..ec010f7ec1 100644
+--- a/src/win32_window.c
++++ b/src/win32_window.c
+@@ -281,7 +281,7 @@ static void disableCursor(_GLFWwindow* window)
+     _glfwCenterCursorInContentArea(window);
+     updateClipRect(window);
+ 
+-    if (!RegisterRawInputDevices(&rid, 1, sizeof(rid)))
++    if (window->useRawInput && !RegisterRawInputDevices(&rid, 1, sizeof(rid)))
+     {
+         _glfwInputErrorWin32(GLFW_PLATFORM_ERROR,
+                              "Win32: Failed to register raw input device");
+@@ -301,7 +301,7 @@ static void enableCursor(_GLFWwindow* window)
+                               _glfw.win32.restoreCursorPosY);
+     updateCursorImage(window);
+ 
+-    if (!RegisterRawInputDevices(&rid, 1, sizeof(rid)))
++    if (window->useRawInput && !RegisterRawInputDevices(&rid, 1, sizeof(rid)))
+     {
+         _glfwInputErrorWin32(GLFW_PLATFORM_ERROR,
+                              "Win32: Failed to remove raw input device");
+@@ -816,9 +816,18 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
+ 
+             // Disabled cursor motion input is provided by WM_INPUT
+             if (window->cursorMode == GLFW_CURSOR_DISABLED)
+-                break;
++            {
++                if (_glfw.win32.disabledCursorWindow != window || window->useRawInput)
++                    break;
+ 
+-            _glfwInputCursorPos(window, x, y);
++                const int dx = x - window->win32.lastCursorPosX;
++                const int dy = y - window->win32.lastCursorPosY;
++                _glfwInputCursorPos(window,
++                                    window->virtualCursorPosX + dx,
++                                    window->virtualCursorPosY + dy);
++            }
++            else
++                _glfwInputCursorPos(window, x, y);
+ 
+             window->win32.lastCursorPosX = x;
+             window->win32.lastCursorPosY = y;
+@@ -847,7 +856,7 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
+             int dx, dy;
+ 
+             // Only process input when disabled cursor mode is applied
+-            if (_glfw.win32.disabledCursorWindow != window)
++            if (_glfw.win32.disabledCursorWindow != window || !window->useRawInput)
+                 break;
+ 
+             GetRawInputData(ri, RID_INPUT, NULL, &size, sizeof(RAWINPUTHEADER));
+@@ -1845,6 +1854,24 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+     }
+ }
+ 
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
++{
++    if (window->useRawInput != enabled)
++    {
++        int update = (_glfw.win32.disabledCursorWindow == window);
++        if (update)
++            enableCursor(window);
++        window->useRawInput = enabled;
++        if (update)
++            disableCursor(window);
++    }
++}
++
++GLFWbool _glfwPlatformRawInputSupported(void)
++{
++    return GLFW_TRUE;
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     MSG msg;
+diff --git a/src/window.c b/src/window.c
+index 24e60054dc..f8cb030e3c 100644
+--- a/src/window.c
++++ b/src/window.c
+@@ -202,6 +202,7 @@ GLFWAPI GLFWwindow* glfwCreateWindow(int width, int height,
+     window->floating    = wndconfig.floating;
+     window->focusOnShow = wndconfig.focusOnShow;
+     window->cursorMode  = GLFW_CURSOR_NORMAL;
++    window->useRawInput = GLFW_TRUE;
+ 
+     window->minwidth    = GLFW_DONT_CARE;
+     window->minheight   = GLFW_DONT_CARE;
+@@ -1097,4 +1098,3 @@ GLFWAPI void glfwPostEmptyEvent(void)
+     _GLFW_REQUIRE_INIT();
+     _glfwPlatformPostEmptyEvent();
+ }
+-
+diff --git a/src/wl_window.c b/src/wl_window.c
+index 98a646590f..bd6ff880a7 100644
+--- a/src/wl_window.c
++++ b/src/wl_window.c
+@@ -1304,6 +1304,16 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ {
+ }
+ 
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
++{
++    window->useRawInput = enabled;
++}
++
++GLFWbool _glfwPlatformRawInputSupported(void)
++{
++    return GLFW_FALSE;
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     handleEvents(0);
+diff --git a/src/x11_window.c b/src/x11_window.c
+index 8e587546e7..9e25fda324 100644
+--- a/src/x11_window.c
++++ b/src/x11_window.c
+@@ -526,7 +526,7 @@ static void updateCursorImage(_GLFWwindow* window)
+ //
+ static void disableCursor(_GLFWwindow* window)
+ {
+-    if (_glfw.x11.xi.available)
++    if (_glfw.x11.xi.available && window->useRawInput)
+     {
+         XIEventMask em;
+         unsigned char mask[XIMaskLen(XI_RawMotion)] = { 0 };
+@@ -557,7 +557,7 @@ static void disableCursor(_GLFWwindow* window)
+ //
+ static void enableCursor(_GLFWwindow* window)
+ {
+-    if (_glfw.x11.xi.available)
++    if (_glfw.x11.xi.available && window->useRawInput)
+     {
+         XIEventMask em;
+         unsigned char mask[] = { 0 };
+@@ -1183,6 +1183,7 @@ static void processEvent(XEvent *event)
+             _GLFWwindow* window = _glfw.x11.disabledCursorWindow;
+ 
+             if (window &&
++                window->useRawInput &&
+                 event->xcookie.extension == _glfw.x11.xi.majorOpcode &&
+                 XGetEventData(_glfw.x11.display, &event->xcookie) &&
+                 event->xcookie.evtype == XI_RawMotion)
+@@ -1483,7 +1484,7 @@ static void processEvent(XEvent *event)
+                 {
+                     if (_glfw.x11.disabledCursorWindow != window)
+                         return;
+-                    if (_glfw.x11.xi.available)
++                    if (_glfw.x11.xi.available && window->useRawInput)
+                         return;
+ 
+                     const int dx = x - window->x11.lastCursorPosX;
+@@ -2652,6 +2653,24 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+                     PropModeReplace, (unsigned char*) &value, 1);
+ }
+ 
++void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
++{
++    if (window->useRawInput != enabled)
++    {
++        int update = (_glfw.x11.disabledCursorWindow == window && _glfw.x11.xi.available);
++        if (update)
++            enableCursor(window);
++        window->useRawInput = enabled;
++        if (update)
++            disableCursor(window);
++    }
++}
++
++GLFWbool _glfwPlatformRawInputSupported(void)
++{
++    return _glfw.x11.xi.available;
++}
++
+ void _glfwPlatformPollEvents(void)
+ {
+     _GLFWwindow* window;
+diff --git a/tests/cursor.c b/tests/cursor.c
+index 4cc74ad515..a64c0bf809 100644
+--- a/tests/cursor.c
++++ b/tests/cursor.c
+@@ -163,6 +163,19 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action,
+             printf("(( cursor is hidden ))\n");
+             break;
+ 
++        case GLFW_KEY_R:
++            if (glfwGetInputMode(window, GLFW_RAW_INPUT))
++            {
++                glfwSetInputMode(window, GLFW_RAW_INPUT, GLFW_FALSE);
++                printf("(( raw input is disabled ))\n");
++            }
++            else
++            {
++                glfwSetInputMode(window, GLFW_RAW_INPUT, GLFW_TRUE);
++                printf("(( raw input is enabled ))\n");
++            }
++            break;
++
+         case GLFW_KEY_SPACE:
+             swap_interval = 1 - swap_interval;
+             printf("(( swap interval: %i ))\n", swap_interval);
+
+From f48146ebaad0c0c7181e86679b0ad8118431599d Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Camilla=20L=C3=B6wy?= <elmindreda@elmindreda.org>
+Date: Mon, 11 Feb 2019 19:10:20 +0100
+Subject: [PATCH 13/14] Rename raw input to raw mouse motion, cleanup
+
+This renames 'raw input' to 'raw mouse motion' as there are other kinds
+of raw input.  The update path is restructured to avoid reinitializing
+all of disabled cursor mode.  Modification of shared state is moved out
+into shared code.  Raw mouse motion is disabled by default for
+compatibility.
+
+Related to #1401.
+---
+ README.md            |  5 +--
+ docs/input.dox       | 27 +++++++++++++-
+ docs/news.dox        |  6 ++--
+ include/GLFW/glfw3.h | 54 ++++++++++++++--------------
+ src/cocoa_window.m   |  5 ++-
+ src/input.c          | 31 +++++++++++++----
+ src/internal.h       |  6 ++--
+ src/null_window.c    |  5 ++-
+ src/win32_window.c   | 78 +++++++++++++++++++++++++----------------
+ src/window.c         |  1 -
+ src/wl_window.c      |  5 ++-
+ src/x11_window.c     | 83 +++++++++++++++++++++++++-------------------
+ tests/cursor.c       |  9 +++--
+ 13 files changed, 194 insertions(+), 121 deletions(-)
+
+diff --git a/README.md b/README.md
+index 5f7045ab0d..6422dbdec2 100644
+--- a/README.md
++++ b/README.md
+@@ -182,7 +182,8 @@ information on what to include when reporting a bug.
+ - Added `GLFW_OSMESA_CONTEXT_API` for creating OpenGL contexts with
+   [OSMesa](https://www.mesa3d.org/osmesa.html) (#281)
+ - Added `GenerateMappings.cmake` script for updating gamepad mappings
+-- Added `GLFW_RAW_INPUT` input mode and `glfwRawInputSupported` function (#1401)
++- Added `GLFW_RAW_MOUSE_MOTION` input mode and `glfwRawMouseMotionSupported`
++  function (#1401)
+ - Made `glfwCreateWindowSurface` emit an error when the window has a context
+   (#1194,#1205)
+ - Deprecated window parameter of clipboard string functions
+@@ -437,6 +438,7 @@ skills.
+  - Cyril Pichard
+  - Keith Pitt
+  - Stanislav Podgorskiy
++ - Nathan Poirier
+  - Alexandre Pretyman
+  - przemekmirek
+  - Philip Rideout
+@@ -490,7 +492,6 @@ skills.
+  - Santi Zupancic
+  - Jonas Ådahl
+  - Lasse Öörni
+- - Nathan Poirier
+  - All the unmentioned and anonymous contributors in the GLFW community, for bug
+    reports, patches, feedback, testing and encouragement
+ 
+diff --git a/docs/input.dox b/docs/input.dox
+index 159fb454e7..a438a18e14 100644
+--- a/docs/input.dox
++++ b/docs/input.dox
+@@ -233,7 +233,7 @@ arguments can always be passed unmodified to this function.
+ 
+ @section input_mouse Mouse input
+ 
+-Mouse input comes in many forms, including cursor motion, button presses and
++Mouse input comes in many forms, including mouse motion, button presses and
+ scrolling offsets.  The cursor appearance can also be changed, either to
+ a custom image or a standard cursor shape from the system theme.
+ 
+@@ -308,6 +308,31 @@ glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+ @endcode
+ 
+ 
++@anchor GLFW_RAW_MOUSE_MOTION
++@subsection raw_mouse_motion Raw mouse motion
++
++When the cursor is disabled, raw (unscaled and unaccelerated) mouse motion can
++be enabled if available.
++
++Raw mouse motion is closer to the actual motion of the mouse across a surface.
++It is not affected by the scaling and acceleration applied to the motion of the
++desktop cursor.  That processing is suitable for a cursor while raw motion is
++better for controlling for example a 3D camera.  Because of this, raw mouse
++motion is only provided when the cursor is disabled.
++
++Call @ref glfwRawMouseMotionSupported to check if the current machine provides
++raw motion and set the `GLFW_RAW_MOUSE_MOTION` input mode to enable it.  It is
++disabled by default.
++
++@code
++if (glfwRawMouseMotionSupported())
++    glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
++@endcode
++
++If supported, raw mouse motion can be enabled or disabled per-window and at any
++time but it will only be provided when the cursor is disabled.
++
++
+ @subsection cursor_object Cursor objects
+ 
+ GLFW supports creating both custom and system theme cursor images, encapsulated
+diff --git a/docs/news.dox b/docs/news.dox
+index 43f384eab9..65812e7128 100644
+--- a/docs/news.dox
++++ b/docs/news.dox
+@@ -135,8 +135,10 @@ attribute corresponds to the [cursor enter/leave](@ref cursor_enter) event.
+ 
+ @subsection news_33_rawmotion Support for raw mouse motion
+ 
+-GLFW now uses raw (unscaled and unaccelerated) mouse motion in disabled cursor
+-mode on platforms where this is available, specifically Windows and X11.
++GLFW now supports raw (unscaled and unaccelerated) mouse motion in disabled
++cursor mode with the [GLFW_RAW_MOUSE_MOTION](@ref GLFW_RAW_MOUSE_MOTION) input
++mode.  Call @ref glfwRawMouseMotionSupported to check if the current machine
++supports raw mouse motion.
+ 
+ 
+ @subsection news_33_moltenvk Support for Vulkan on macOS via MoltenVK
+diff --git a/include/GLFW/glfw3.h b/include/GLFW/glfw3.h
+index 9556cede67..a8c29f973f 100644
+--- a/include/GLFW/glfw3.h
++++ b/include/GLFW/glfw3.h
+@@ -1002,7 +1002,7 @@ extern "C" {
+ #define GLFW_STICKY_KEYS            0x00033002
+ #define GLFW_STICKY_MOUSE_BUTTONS   0x00033003
+ #define GLFW_LOCK_KEY_MODS          0x00033004
+-#define GLFW_RAW_INPUT              0x00033005
++#define GLFW_RAW_MOUSE_MOTION       0x00033005
+ 
+ #define GLFW_CURSOR_NORMAL          0x00034001
+ #define GLFW_CURSOR_HIDDEN          0x00034002
+@@ -3812,11 +3812,12 @@ GLFWAPI void glfwPostEmptyEvent(void);
+  *  This function returns the value of an input option for the specified window.
+  *  The mode must be one of @ref GLFW_CURSOR, @ref GLFW_STICKY_KEYS,
+  *  @ref GLFW_STICKY_MOUSE_BUTTONS, @ref GLFW_LOCK_KEY_MODS or
+- *  @ref GLFW_RAW_INPUT.
++ *  @ref GLFW_RAW_MOUSE_MOTION.
+  *
+  *  @param[in] window The window to query.
+  *  @param[in] mode One of `GLFW_CURSOR`, `GLFW_STICKY_KEYS`,
+- *  `GLFW_STICKY_MOUSE_BUTTONS`, `GLFW_LOCK_KEY_MODS` or `GLFW_RAW_INPUT`.
++ *  `GLFW_STICKY_MOUSE_BUTTONS`, `GLFW_LOCK_KEY_MODS` or
++ *  `GLFW_RAW_MOUSE_MOTION`.
+  *
+  *  @errors Possible errors include @ref GLFW_NOT_INITIALIZED and @ref
+  *  GLFW_INVALID_ENUM.
+@@ -3836,7 +3837,7 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* window, int mode);
+  *  This function sets an input mode option for the specified window.  The mode
+  *  must be one of @ref GLFW_CURSOR, @ref GLFW_STICKY_KEYS,
+  *  @ref GLFW_STICKY_MOUSE_BUTTONS, @ref GLFW_LOCK_KEY_MODS or
+- *  @ref GLFW_RAW_INPUT.
++ *  @ref GLFW_RAW_MOUSE_MOTION.
+  *
+  *  If the mode is `GLFW_CURSOR`, the value must be one of the following cursor
+  *  modes:
+@@ -3868,14 +3869,16 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* window, int mode);
+  *  GLFW_MOD_CAPS_LOCK bit set when the event was generated with Caps Lock on,
+  *  and the @ref GLFW_MOD_NUM_LOCK bit when Num Lock was on.
+  *
+- *  If the mode is `GLFW_RAW_INPUT`, the value must be either `GLFW_TRUE` to
+- *  enable the use of raw input, or `GLFW_FALSE` to disable it.  If enabled and
+- *  supported by the machine, the program will retrieve high-definition mouse
+- *  movement when cursor is grabbed.
++ *  If the mode is `GLFW_RAW_MOUSE_MOTION`, the value must be either `GLFW_TRUE`
++ *  to enable raw (unscaled and unaccelerated) mouse motion when the cursor is
++ *  disabled, or `GLFW_FALSE` to disable it.  If raw motion is not supported,
++ *  attempting to set this will emit @ref GLFW_PLATFORM_ERROR.  Call @ref
++ *  glfwRawMouseMotionSupported to check for support.
+  *
+  *  @param[in] window The window whose input mode to set.
+  *  @param[in] mode One of `GLFW_CURSOR`, `GLFW_STICKY_KEYS`,
+- *  `GLFW_STICKY_MOUSE_BUTTONS`, `GLFW_LOCK_KEY_MODS` or `GLFW_RAW_INPUT`.
++ *  `GLFW_STICKY_MOUSE_BUTTONS`, `GLFW_LOCK_KEY_MODS` or
++ *  `GLFW_RAW_MOUSE_MOTION`.
+  *  @param[in] value The new value of the specified input mode.
+  *
+  *  @errors Possible errors include @ref GLFW_NOT_INITIALIZED, @ref
+@@ -3891,37 +3894,34 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* window, int mode);
+  */
+ GLFWAPI void glfwSetInputMode(GLFWwindow* window, int mode, int value);
+ 
+-/*! @brief Returns whether the raw input is supported.
++/*! @brief Returns whether raw mouse motion is supported.
+  *
+- * This function returns whether the raw input is supported by the current
+- * machine.
++ *  This function returns whether raw mouse motion is supported on the current
++ *  system.  This status does not change after GLFW has been initialized so you
++ *  only need to check this once.  If you attempt to enable raw motion on
++ *  a system that does not support it, @ref GLFW_PLATFORM_ERROR will be emitted.
+  *
+- * Raw input allow to retrieve high-definition movement from mouse.
+- * Input from a high-definition mouse is much more precise than that from a
+- * standard mouse.  But often, they cannot be obtained through standard
+- * platforms API which transform mouse movement using their own improvements
+- * (like pointer acceleration).  Platform's improvements are ideal for pointer
+- * control but it is not so good for moving a first-person camera.  For this
+- * reason when the cursor of a window is grabbed by setting @ref GLFW_CURSOR
+- * to @ref GLFW_CURSOR_DISABLED, raw input is used.
++ *  Raw mouse motion is closer to the actual motion of the mouse across
++ *  a surface.  It is not affected by the scaling and acceleration applied to
++ *  the motion of the desktop cursor.  That processing is suitable for a cursor
++ *  while raw motion is better for controlling for example a 3D camera.  Because
++ *  of this, raw mouse motion is only provided when the cursor is disabled.
+  *
+- * The use of raw input can be disabled using @ref glfwSetInputMode with
+- * @ref GLFW_RAW_INPUT mode.
+- *
+- *  @return `GLFW_TRUE` if high-definition mouse movement is supported, or
+- *  `GLFW_FALSE` otherwise.
++ *  @return `GLFW_TRUE` if raw mouse motion is supported on the current machine,
++ *  or `GLFW_FALSE` otherwise.
+  *
+  *  @errors Possible errors include @ref GLFW_NOT_INITIALIZED.
+  *
+- *  @thread_safety This function may be called from any thread.
++ *  @thread_safety This function must only be called from the main thread.
+  *
++ *  @sa @ref raw_mouse_motion
+  *  @sa @ref glfwSetInputMode
+  *
+  *  @since Added in version 3.3.
+  *
+  *  @ingroup input
+  */
+-GLFWAPI int glfwRawInputSupported(void);
++GLFWAPI int glfwRawMouseMotionSupported(void);
+ 
+ /*! @brief Returns the layout-specific name of the specified printable key.
+  *
+diff --git a/src/cocoa_window.m b/src/cocoa_window.m
+index e3e20de793..9bea2f27f6 100644
+--- a/src/cocoa_window.m
++++ b/src/cocoa_window.m
+@@ -1297,12 +1297,11 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+     [window->ns.object setAlphaValue:opacity];
+ }
+ 
+-void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
++void _glfwPlatformSetRawMouseMotion(_GLFWwindow *window, GLFWbool enabled)
+ {
+-    window->useRawInput = enabled;
+ }
+ 
+-GLFWbool _glfwPlatformRawInputSupported(void)
++GLFWbool _glfwPlatformRawMouseMotionSupported(void)
+ {
+     return GLFW_FALSE;
+ }
+diff --git a/src/input.c b/src/input.c
+index ef14fad53d..b5e11542aa 100644
+--- a/src/input.c
++++ b/src/input.c
+@@ -463,6 +463,7 @@ void _glfwCenterCursorInContentArea(_GLFWwindow* window)
+     _glfwPlatformSetCursorPos(window, width / 2.0, height / 2.0);
+ }
+ 
++
+ //////////////////////////////////////////////////////////////////////////
+ //////                        GLFW public API                       //////
+ //////////////////////////////////////////////////////////////////////////
+@@ -484,8 +485,8 @@ GLFWAPI int glfwGetInputMode(GLFWwindow* handle, int mode)
+             return window->stickyMouseButtons;
+         case GLFW_LOCK_KEY_MODS:
+             return window->lockKeyMods;
+-        case GLFW_RAW_INPUT:
+-            return window->useRawInput;
++        case GLFW_RAW_MOUSE_MOTION:
++            return window->rawMouseMotion;
+     }
+ 
+     _glfwInputError(GLFW_INVALID_ENUM, "Invalid input mode 0x%08X", mode);
+@@ -562,17 +563,33 @@ GLFWAPI void glfwSetInputMode(GLFWwindow* handle, int mode, int value)
+         window->stickyMouseButtons = value;
+     }
+     else if (mode == GLFW_LOCK_KEY_MODS)
++    {
+         window->lockKeyMods = value ? GLFW_TRUE : GLFW_FALSE;
+-    else if (mode == GLFW_RAW_INPUT)
+-        _glfwPlatformSetRawInput(window, value ? GLFW_TRUE : GLFW_FALSE);
++    }
++    else if (mode == GLFW_RAW_MOUSE_MOTION)
++    {
++        if (!_glfwPlatformRawMouseMotionSupported())
++        {
++            _glfwInputError(GLFW_PLATFORM_ERROR,
++                            "Raw mouse motion is not supported on this system");
++            return;
++        }
++
++        value = value ? GLFW_TRUE : GLFW_FALSE;
++        if (window->rawMouseMotion == value)
++            return;
++
++        window->rawMouseMotion = value;
++        _glfwPlatformSetRawMouseMotion(window, value);
++    }
+     else
+         _glfwInputError(GLFW_INVALID_ENUM, "Invalid input mode 0x%08X", mode);
+ }
+ 
+-GLFWAPI int glfwRawInputSupported(void)
++GLFWAPI int glfwRawMouseMotionSupported(void)
+ {
+-    _GLFW_REQUIRE_INIT_OR_RETURN(0);
+-    return _glfwPlatformRawInputSupported();
++    _GLFW_REQUIRE_INIT_OR_RETURN(GLFW_FALSE);
++    return _glfwPlatformRawMouseMotionSupported();
+ }
+ 
+ GLFWAPI const char* glfwGetKeyName(int key, int scancode)
+diff --git a/src/internal.h b/src/internal.h
+index 65d77cc179..abba5baf1b 100644
+--- a/src/internal.h
++++ b/src/internal.h
+@@ -390,7 +390,7 @@ struct _GLFWwindow
+     char                keys[GLFW_KEY_LAST + 1];
+     // Virtual cursor position when cursor is disabled
+     double              virtualCursorPosX, virtualCursorPosY;
+-    GLFWbool            useRawInput;
++    GLFWbool            rawMouseMotion;
+ 
+     _GLFWcontext        context;
+ 
+@@ -597,8 +597,8 @@ const char* _glfwPlatformGetVersionString(void);
+ void _glfwPlatformGetCursorPos(_GLFWwindow* window, double* xpos, double* ypos);
+ void _glfwPlatformSetCursorPos(_GLFWwindow* window, double xpos, double ypos);
+ void _glfwPlatformSetCursorMode(_GLFWwindow* window, int mode);
+-void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled);
+-GLFWbool _glfwPlatformRawInputSupported(void);
++void _glfwPlatformSetRawMouseMotion(_GLFWwindow *window, GLFWbool enabled);
++GLFWbool _glfwPlatformRawMouseMotionSupported(void);
+ int _glfwPlatformCreateCursor(_GLFWcursor* cursor,
+                               const GLFWimage* image, int xhot, int yhot);
+ int _glfwPlatformCreateStandardCursor(_GLFWcursor* cursor, int shape);
+diff --git a/src/null_window.c b/src/null_window.c
+index cb976310eb..8dc92cb7d4 100644
+--- a/src/null_window.c
++++ b/src/null_window.c
+@@ -196,12 +196,11 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ {
+ }
+ 
+-void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
++void _glfwPlatformSetRawMouseMotion(_GLFWwindow *window, GLFWbool enabled)
+ {
+-    window->useRawInput = enabled;
+ }
+ 
+-GLFWbool _glfwPlatformRawInputSupported(void)
++GLFWbool _glfwPlatformRawMouseMotionSupported(void)
+ {
+     return GLFW_FALSE;
+ }
+diff --git a/src/win32_window.c b/src/win32_window.c
+index ec010f7ec1..728b6e07ad 100644
+--- a/src/win32_window.c
++++ b/src/win32_window.c
+@@ -267,12 +267,36 @@ static void updateClipRect(_GLFWwindow* window)
+         ClipCursor(NULL);
+ }
+ 
+-// Apply disabled cursor mode to a focused window
++// Enables WM_INPUT messages for the mouse for the specified window
+ //
+-static void disableCursor(_GLFWwindow* window)
++static void enableRawMouseMotion(_GLFWwindow* window)
+ {
+     const RAWINPUTDEVICE rid = { 0x01, 0x02, 0, window->win32.handle };
+ 
++    if (!RegisterRawInputDevices(&rid, 1, sizeof(rid)))
++    {
++        _glfwInputErrorWin32(GLFW_PLATFORM_ERROR,
++                             "Win32: Failed to register raw input device");
++    }
++}
++
++// Disables WM_INPUT messages for the mouse
++//
++static void disableRawMouseMotion(_GLFWwindow* window)
++{
++    const RAWINPUTDEVICE rid = { 0x01, 0x02, RIDEV_REMOVE, NULL };
++
++    if (!RegisterRawInputDevices(&rid, 1, sizeof(rid)))
++    {
++        _glfwInputErrorWin32(GLFW_PLATFORM_ERROR,
++                             "Win32: Failed to remove raw input device");
++    }
++}
++
++// Apply disabled cursor mode to a focused window
++//
++static void disableCursor(_GLFWwindow* window)
++{
+     _glfw.win32.disabledCursorWindow = window;
+     _glfwPlatformGetCursorPos(window,
+                               &_glfw.win32.restoreCursorPosX,
+@@ -281,18 +305,16 @@ static void disableCursor(_GLFWwindow* window)
+     _glfwCenterCursorInContentArea(window);
+     updateClipRect(window);
+ 
+-    if (window->useRawInput && !RegisterRawInputDevices(&rid, 1, sizeof(rid)))
+-    {
+-        _glfwInputErrorWin32(GLFW_PLATFORM_ERROR,
+-                             "Win32: Failed to register raw input device");
+-    }
++    if (window->rawMouseMotion)
++        enableRawMouseMotion(window);
+ }
+ 
+ // Exit disabled cursor mode for the specified window
+ //
+ static void enableCursor(_GLFWwindow* window)
+ {
+-    const RAWINPUTDEVICE rid = { 0x01, 0x02, RIDEV_REMOVE, NULL };
++    if (window->rawMouseMotion)
++        disableRawMouseMotion(window);
+ 
+     _glfw.win32.disabledCursorWindow = NULL;
+     updateClipRect(NULL);
+@@ -300,12 +322,6 @@ static void enableCursor(_GLFWwindow* window)
+                               _glfw.win32.restoreCursorPosX,
+                               _glfw.win32.restoreCursorPosY);
+     updateCursorImage(window);
+-
+-    if (window->useRawInput && !RegisterRawInputDevices(&rid, 1, sizeof(rid)))
+-    {
+-        _glfwInputErrorWin32(GLFW_PLATFORM_ERROR,
+-                             "Win32: Failed to remove raw input device");
+-    }
+ }
+ 
+ // Returns whether the cursor is in the content area of the specified window
+@@ -817,11 +833,14 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
+             // Disabled cursor motion input is provided by WM_INPUT
+             if (window->cursorMode == GLFW_CURSOR_DISABLED)
+             {
+-                if (_glfw.win32.disabledCursorWindow != window || window->useRawInput)
+-                    break;
+-
+                 const int dx = x - window->win32.lastCursorPosX;
+                 const int dy = y - window->win32.lastCursorPosY;
++
++                if (_glfw.win32.disabledCursorWindow != window)
++                    break;
++                if (window->rawMouseMotion)
++                    break;
++
+                 _glfwInputCursorPos(window,
+                                     window->virtualCursorPosX + dx,
+                                     window->virtualCursorPosY + dy);
+@@ -855,8 +874,9 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
+             RAWINPUT* data;
+             int dx, dy;
+ 
+-            // Only process input when disabled cursor mode is applied
+-            if (_glfw.win32.disabledCursorWindow != window || !window->useRawInput)
++            if (_glfw.win32.disabledCursorWindow != window)
++                break;
++            if (!window->rawMouseMotion)
+                 break;
+ 
+             GetRawInputData(ri, RID_INPUT, NULL, &size, sizeof(RAWINPUTHEADER));
+@@ -1854,20 +1874,18 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+     }
+ }
+ 
+-void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
++void _glfwPlatformSetRawMouseMotion(_GLFWwindow *window, GLFWbool enabled)
+ {
+-    if (window->useRawInput != enabled)
+-    {
+-        int update = (_glfw.win32.disabledCursorWindow == window);
+-        if (update)
+-            enableCursor(window);
+-        window->useRawInput = enabled;
+-        if (update)
+-            disableCursor(window);
+-    }
++    if (_glfw.win32.disabledCursorWindow != window)
++        return;
++
++    if (enabled)
++        enableRawMouseMotion(window);
++    else
++        disableRawMouseMotion(window);
+ }
+ 
+-GLFWbool _glfwPlatformRawInputSupported(void)
++GLFWbool _glfwPlatformRawMouseMotionSupported(void)
+ {
+     return GLFW_TRUE;
+ }
+diff --git a/src/window.c b/src/window.c
+index f8cb030e3c..91c323fbde 100644
+--- a/src/window.c
++++ b/src/window.c
+@@ -202,7 +202,6 @@ GLFWAPI GLFWwindow* glfwCreateWindow(int width, int height,
+     window->floating    = wndconfig.floating;
+     window->focusOnShow = wndconfig.focusOnShow;
+     window->cursorMode  = GLFW_CURSOR_NORMAL;
+-    window->useRawInput = GLFW_TRUE;
+ 
+     window->minwidth    = GLFW_DONT_CARE;
+     window->minheight   = GLFW_DONT_CARE;
+diff --git a/src/wl_window.c b/src/wl_window.c
+index bd6ff880a7..a287a75705 100644
+--- a/src/wl_window.c
++++ b/src/wl_window.c
+@@ -1304,12 +1304,11 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+ {
+ }
+ 
+-void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
++void _glfwPlatformSetRawMouseMotion(_GLFWwindow *window, GLFWbool enabled)
+ {
+-    window->useRawInput = enabled;
+ }
+ 
+-GLFWbool _glfwPlatformRawInputSupported(void)
++GLFWbool _glfwPlatformRawMouseMotionSupported(void)
+ {
+     return GLFW_FALSE;
+ }
+diff --git a/src/x11_window.c b/src/x11_window.c
+index 9e25fda324..92a137f487 100644
+--- a/src/x11_window.c
++++ b/src/x11_window.c
+@@ -522,22 +522,41 @@ static void updateCursorImage(_GLFWwindow* window)
+     }
+ }
+ 
+-// Apply disabled cursor mode to a focused window
++// Enable XI2 raw mouse motion events
+ //
+-static void disableCursor(_GLFWwindow* window)
++static void enableRawMouseMotion(_GLFWwindow* window)
+ {
+-    if (_glfw.x11.xi.available && window->useRawInput)
+-    {
+-        XIEventMask em;
+-        unsigned char mask[XIMaskLen(XI_RawMotion)] = { 0 };
++    XIEventMask em;
++    unsigned char mask[XIMaskLen(XI_RawMotion)] = { 0 };
+ 
+-        em.deviceid = XIAllMasterDevices;
+-        em.mask_len = sizeof(mask);
+-        em.mask = mask;
+-        XISetMask(mask, XI_RawMotion);
++    em.deviceid = XIAllMasterDevices;
++    em.mask_len = sizeof(mask);
++    em.mask = mask;
++    XISetMask(mask, XI_RawMotion);
+ 
+-        XISelectEvents(_glfw.x11.display, _glfw.x11.root, &em, 1);
+-    }
++    XISelectEvents(_glfw.x11.display, _glfw.x11.root, &em, 1);
++}
++
++// Disable XI2 raw mouse motion events
++//
++static void disableRawMouseMotion(_GLFWwindow* window)
++{
++    XIEventMask em;
++    unsigned char mask[] = { 0 };
++
++    em.deviceid = XIAllMasterDevices;
++    em.mask_len = sizeof(mask);
++    em.mask = mask;
++
++    XISelectEvents(_glfw.x11.display, _glfw.x11.root, &em, 1);
++}
++
++// Apply disabled cursor mode to a focused window
++//
++static void disableCursor(_GLFWwindow* window)
++{
++    if (window->rawMouseMotion)
++        enableRawMouseMotion(window);
+ 
+     _glfw.x11.disabledCursorWindow = window;
+     _glfwPlatformGetCursorPos(window,
+@@ -557,17 +576,8 @@ static void disableCursor(_GLFWwindow* window)
+ //
+ static void enableCursor(_GLFWwindow* window)
+ {
+-    if (_glfw.x11.xi.available && window->useRawInput)
+-    {
+-        XIEventMask em;
+-        unsigned char mask[] = { 0 };
+-
+-        em.deviceid = XIAllMasterDevices;
+-        em.mask_len = sizeof(mask);
+-        em.mask = mask;
+-
+-        XISelectEvents(_glfw.x11.display, _glfw.x11.root, &em, 1);
+-    }
++    if (window->rawMouseMotion)
++        disableRawMouseMotion(window);
+ 
+     _glfw.x11.disabledCursorWindow = NULL;
+     XUngrabPointer(_glfw.x11.display, CurrentTime);
+@@ -1183,7 +1193,7 @@ static void processEvent(XEvent *event)
+             _GLFWwindow* window = _glfw.x11.disabledCursorWindow;
+ 
+             if (window &&
+-                window->useRawInput &&
++                window->rawMouseMotion &&
+                 event->xcookie.extension == _glfw.x11.xi.majorOpcode &&
+                 XGetEventData(_glfw.x11.display, &event->xcookie) &&
+                 event->xcookie.evtype == XI_RawMotion)
+@@ -1484,7 +1494,7 @@ static void processEvent(XEvent *event)
+                 {
+                     if (_glfw.x11.disabledCursorWindow != window)
+                         return;
+-                    if (_glfw.x11.xi.available && window->useRawInput)
++                    if (window->rawMouseMotion)
+                         return;
+ 
+                     const int dx = x - window->x11.lastCursorPosX;
+@@ -2653,20 +2663,21 @@ void _glfwPlatformSetWindowOpacity(_GLFWwindow* window, float opacity)
+                     PropModeReplace, (unsigned char*) &value, 1);
+ }
+ 
+-void _glfwPlatformSetRawInput(_GLFWwindow *window, GLFWbool enabled)
++void _glfwPlatformSetRawMouseMotion(_GLFWwindow *window, GLFWbool enabled)
+ {
+-    if (window->useRawInput != enabled)
+-    {
+-        int update = (_glfw.x11.disabledCursorWindow == window && _glfw.x11.xi.available);
+-        if (update)
+-            enableCursor(window);
+-        window->useRawInput = enabled;
+-        if (update)
+-            disableCursor(window);
+-    }
++    if (!_glfw.x11.xi.available)
++        return;
++
++    if (_glfw.x11.disabledCursorWindow != window)
++        return;
++
++    if (enabled)
++        enableRawMouseMotion(window);
++    else
++        disableRawMouseMotion(window);
+ }
+ 
+-GLFWbool _glfwPlatformRawInputSupported(void)
++GLFWbool _glfwPlatformRawMouseMotionSupported(void)
+ {
+     return _glfw.x11.xi.available;
+ }
+diff --git a/tests/cursor.c b/tests/cursor.c
+index a64c0bf809..68d3069f07 100644
+--- a/tests/cursor.c
++++ b/tests/cursor.c
+@@ -164,14 +164,17 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action,
+             break;
+ 
+         case GLFW_KEY_R:
+-            if (glfwGetInputMode(window, GLFW_RAW_INPUT))
++            if (!glfwRawMouseMotionSupported())
++                break;
++
++            if (glfwGetInputMode(window, GLFW_RAW_MOUSE_MOTION))
+             {
+-                glfwSetInputMode(window, GLFW_RAW_INPUT, GLFW_FALSE);
++                glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
+                 printf("(( raw input is disabled ))\n");
+             }
+             else
+             {
+-                glfwSetInputMode(window, GLFW_RAW_INPUT, GLFW_TRUE);
++                glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+                 printf("(( raw input is enabled ))\n");
+             }
+             break;
+
+From b40ba48059bcdb26fccbb3f4cfb844443d01301b Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 15 Feb 2019 13:36:35 +0100
+Subject: [PATCH 14/14] fixup! Merge branch 'raw-mouse-motion-control' of
+ https://github.com/glfw/glfw into feature/toggle-rawinput
+
+---
+ src/window.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/src/window.c b/src/window.c
+index f8cb030e3c..91c323fbde 100644
+--- a/src/window.c
++++ b/src/window.c
+@@ -202,7 +202,6 @@ GLFWAPI GLFWwindow* glfwCreateWindow(int width, int height,
+     window->floating    = wndconfig.floating;
+     window->focusOnShow = wndconfig.focusOnShow;
+     window->cursorMode  = GLFW_CURSOR_NORMAL;
+-    window->useRawInput = GLFW_TRUE;
+ 
+     window->minwidth    = GLFW_DONT_CARE;
+     window->minheight   = GLFW_DONT_CARE;

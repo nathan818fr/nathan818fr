@@ -1,0 +1,103 @@
+From 5428feb3b7ec1b81975ee2cfeebc76d9c4ef365e Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sun, 16 Sep 2018 12:23:46 +0200
+Subject: [PATCH 1/2] :bug: Fix invalid parameter 'absolute-git-dir' with git
+ version < 2.13
+
+---
+ src/constants.js |  4 +++-
+ src/gitmoji.js   | 25 +++++++++++++++++++++++--
+ 2 files changed, 26 insertions(+), 3 deletions(-)
+
+diff --git a/src/constants.js b/src/constants.js
+index 14ec2eb5f..0dff26b85 100644
+--- a/src/constants.js
++++ b/src/constants.js
+@@ -11,6 +11,7 @@ const ISSUE_FORMAT = 'issueFormat'
+ const JIRA = 'jira'
+ const SIGNED_COMMIT = 'signedCommit'
+ const TITLE_MAX_LENGTH_COUNT = 48
++const GIT_VERSION_PATTERN = /^(?:^|\s+)git version ([0-9]+)\.([0-9]+)\.([0-9]+)(?:\s+|$)/i
+ 
+ module.exports = {
+   AUTO_ADD,
+@@ -24,5 +25,6 @@ module.exports = {
+   ISSUE_FORMAT,
+   JIRA,
+   SIGNED_COMMIT,
+-  TITLE_MAX_LENGTH_COUNT
++  TITLE_MAX_LENGTH_COUNT,
++  GIT_VERSION_PATTERN
+ }
+diff --git a/src/gitmoji.js b/src/gitmoji.js
+index 2e8e3334d..386510ed7 100644
+--- a/src/gitmoji.js
++++ b/src/gitmoji.js
+@@ -38,7 +38,7 @@ class GitmojiCli {
+       return this._errorMessage('Not a git repository - @init')
+     }
+ 
+-    execa('git', ['rev-parse', '--absolute-git-dir'])
++    this._gitRevParse()
+       .then(result => {
+         fs.writeFile(
+           result.stdout.trim() + constants.HOOK_PATH,
+@@ -62,7 +62,7 @@ class GitmojiCli {
+       return this._errorMessage('Couldn\'t remove hook, not a git repository')
+     }
+ 
+-    execa('git', ['rev-parse', '--absolute-git-dir'])
++    this._gitRevParse()
+       .then(result => {
+         fs.unlink(result.stdout.trim() + constants.HOOK_PATH, (err) => {
+           if (err) return this._errorMessage(err)
+@@ -219,6 +219,27 @@ class GitmojiCli {
+       return emojis
+     })
+   }
++
++  _gitRevParse () {
++    return execa('git', ['--version'])
++      .then((result) => {
++        const matcher = result.stdout.match(constants.GIT_VERSION_PATTERN)
++        let version
++        if (!matcher) {
++          console.error(chalk.yellow('Warn: unable to determine your git version'))
++          version = undefined
++        } else {
++          version = { major: matcher[1], minor: matcher[2], patch: matcher[3] }
++        }
++        if (!version || version.major > 2 || (version.major === 2 && version.minor >= 13)) {
++          return execa('git', ['rev-parse', '--absolute-git-dir'])
++        }
++        return execa('git', ['rev-parse', '--git-dir']).then((result) => {
++          result.stdout = path.resolve(result.stdout.trim())
++          return result
++        })
++      })
++  }
+ }
+ 
+ module.exports = GitmojiCli
+
+From 00bc7d15d6b8bc26e8939b102a005bde5d418ac6 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sun, 16 Sep 2018 12:50:07 +0200
+Subject: [PATCH 2/2] :camera_flash: Update jest snapshot
+
+---
+ test/__snapshots__/gitmojiCli.spec.js.snap | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/test/__snapshots__/gitmojiCli.spec.js.snap b/test/__snapshots__/gitmojiCli.spec.js.snap
+index ba3bf6e4a..6fd28496c 100644
+--- a/test/__snapshots__/gitmojiCli.spec.js.snap
++++ b/test/__snapshots__/gitmojiCli.spec.js.snap
+@@ -27,6 +27,7 @@ Object {
+   "CODE": "code",
+   "EMOJI_FORMAT": "emojiFormat",
+   "GITHUB": "github",
++  "GIT_VERSION_PATTERN": /\\^\\(\\?:\\^\\|\\\\s\\+\\)git version \\(\\[0-9\\]\\+\\)\\\\\\.\\(\\[0-9\\]\\+\\)\\\\\\.\\(\\[0-9\\]\\+\\)\\(\\?:\\\\s\\+\\|\\$\\)/i,
+   "HOOK_FILE_CONTENTS": "#!/bin/sh
+ # gitmoji as a commit hook
+ exec < /dev/tty

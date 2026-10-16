@@ -1,0 +1,26 @@
+From 192c2bd141df0b0a30e7227ab991fe429270fce3 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 22 Jul 2022 03:18:23 +0200
+Subject: [PATCH] Fix TestWebhooks undefined properties read
+
+---
+ packages/cli/src/TestWebhooks.ts | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/packages/cli/src/TestWebhooks.ts b/packages/cli/src/TestWebhooks.ts
+index 6651660ad580..7d3faa6e587b 100644
+--- a/packages/cli/src/TestWebhooks.ts
++++ b/packages/cli/src/TestWebhooks.ts
+@@ -159,8 +159,10 @@ export class TestWebhooks {
+ 			}
+ 
+ 			// Remove the webhook
+-			clearTimeout(this.testWebhookData[webhookKey].timeout);
+-			delete this.testWebhookData[webhookKey];
++			if (this.testWebhookData[webhookKey]) {
++				clearTimeout(this.testWebhookData[webhookKey].timeout);
++				delete this.testWebhookData[webhookKey];
++			}
+ 			// eslint-disable-next-line @typescript-eslint/no-floating-promises
+ 			this.activeWebhooks!.removeWorkflow(workflow);
+ 		});

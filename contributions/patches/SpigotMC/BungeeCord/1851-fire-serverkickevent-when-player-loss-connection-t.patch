@@ -1,0 +1,161 @@
+From 0d72bad1fc36af1373cb83e4e172d4ace2ad1a01 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 4 May 2016 03:09:56 +0200
+Subject: [PATCH 1/2] Fire ServerKickEvent when player loss connection to
+ server
+
+---
+ .../bungee/connection/DownstreamBridge.java   | 25 +++++++++++++------
+ 1 file changed, 18 insertions(+), 7 deletions(-)
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+index cb9dbaf1d9c..ed94d7db2fb 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+@@ -58,15 +58,16 @@ public void exception(Throwable t) throws Exception
+             return;
+         }
+ 
+-        ServerInfo def = bungee.getServerInfo( con.getPendingConnection().getListener().getFallbackServer() );
+-        if ( server.getInfo() != def )
++        ServerInfo def = con.updateAndGetNextServer( server.getInfo() );
++        ServerKickEvent event = bungee.getPluginManager().callEvent( new ServerKickEvent( con, server.getInfo(), TextComponent.fromLegacyText( bungee.getTranslation( "server_went_down" ) ), def, ServerKickEvent.State.CONNECTED ) );
++        if ( event.isCancelled() && event.getCancelServer() != null )
+         {
+             server.setObsolete( true );
+-            con.connectNow( def );
+-            con.sendMessage( bungee.getTranslation( "server_went_down" ) );
+-        } else
++            con.connectNow( event.getCancelServer() );
++        }
++        else
+         {
+-            con.disconnect( Util.exception( t ) );
++            con.disconnect0( event.getKickReasonComponent() );
+         }
+     }
+ 
+@@ -82,7 +83,17 @@ public void disconnected(ChannelWrapper channel) throws Exception
+ 
+         if ( !server.isObsolete() )
+         {
+-            con.disconnect( bungee.getTranslation( "lost_connection" ) );
++            ServerInfo def = con.updateAndGetNextServer( server.getInfo() );
++            ServerKickEvent event = bungee.getPluginManager().callEvent( new ServerKickEvent( con, server.getInfo(), TextComponent.fromLegacyText( bungee.getTranslation( "lost_connection" ) ), def, ServerKickEvent.State.CONNECTED ) );
++            if ( event.isCancelled() && event.getCancelServer() != null )
++            {
++                server.setObsolete( true );
++                con.connectNow( event.getCancelServer() );
++            }
++            else
++            {
++                con.disconnect0( event.getKickReasonComponent() );
++            }
+         }
+ 
+         ServerDisconnectEvent serverDisconnectEvent = new ServerDisconnectEvent( con, server.getInfo() );
+
+From 51cb37fb0c04951f79c06caf8f943672c121165e Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 4 May 2016 03:18:45 +0200
+Subject: [PATCH 2/2] add ServerKickEvent cause
+
+---
+ .../md_5/bungee/api/event/ServerKickEvent.java  | 17 +++++++++++++++++
+ .../java/net/md_5/bungee/ServerConnector.java   |  2 +-
+ .../bungee/connection/DownstreamBridge.java     |  6 +++---
+ 3 files changed, 21 insertions(+), 4 deletions(-)
+
+diff --git a/api/src/main/java/net/md_5/bungee/api/event/ServerKickEvent.java b/api/src/main/java/net/md_5/bungee/api/event/ServerKickEvent.java
+index 0e1ef5c46d9..073f004db04 100644
+--- a/api/src/main/java/net/md_5/bungee/api/event/ServerKickEvent.java
++++ b/api/src/main/java/net/md_5/bungee/api/event/ServerKickEvent.java
+@@ -44,6 +44,10 @@ public class ServerKickEvent extends Event implements Cancellable
+      * State in which the kick occured.
+      */
+     private State state;
++    /**
++     * Circumstances which led to the kick.
++     */
++    private Cause cause;
+ 
+     public enum State
+     {
+@@ -51,6 +55,12 @@ public enum State
+         CONNECTING, CONNECTED, UNKNOWN;
+     }
+ 
++    public enum Cause
++    {
++
++        SERVER, LOST_CONNECTION, EXCEPTION, UNKNOWN;
++    }
++
+     @Deprecated
+     public ServerKickEvent(ProxiedPlayer player, BaseComponent[] kickReasonComponent, ServerInfo cancelServer)
+     {
+@@ -63,13 +73,20 @@ public ServerKickEvent(ProxiedPlayer player, BaseComponent[] kickReasonComponent
+         this( player, player.getServer().getInfo(), kickReasonComponent, cancelServer, state );
+     }
+ 
++    @Deprecated
+     public ServerKickEvent(ProxiedPlayer player, ServerInfo kickedFrom, BaseComponent[] kickReasonComponent, ServerInfo cancelServer, State state)
++    {
++        this( player, kickedFrom, kickReasonComponent, cancelServer, state, Cause.UNKNOWN );
++    }
++
++    public ServerKickEvent(ProxiedPlayer player, ServerInfo kickedFrom, BaseComponent[] kickReasonComponent, ServerInfo cancelServer, State state, Cause cause)
+     {
+         this.player = player;
+         this.kickedFrom = kickedFrom;
+         this.kickReasonComponent = kickReasonComponent;
+         this.cancelServer = cancelServer;
+         this.state = state;
++        this.cause = cause;
+     }
+ 
+     @Deprecated
+diff --git a/proxy/src/main/java/net/md_5/bungee/ServerConnector.java b/proxy/src/main/java/net/md_5/bungee/ServerConnector.java
+index dd00192c2b4..c38dfad8cd3 100644
+--- a/proxy/src/main/java/net/md_5/bungee/ServerConnector.java
++++ b/proxy/src/main/java/net/md_5/bungee/ServerConnector.java
+@@ -269,7 +269,7 @@ public void handle(EncryptionRequest encryptionRequest) throws Exception
+     public void handle(Kick kick) throws Exception
+     {
+         ServerInfo def = user.updateAndGetNextServer( target );
+-        ServerKickEvent event = new ServerKickEvent( user, target, ComponentSerializer.parse( kick.getMessage() ), def, ServerKickEvent.State.CONNECTING );
++        ServerKickEvent event = new ServerKickEvent( user, target, ComponentSerializer.parse( kick.getMessage() ), def, ServerKickEvent.State.CONNECTING, ServerKickEvent.Cause.SERVER );
+         if ( event.getKickReason().toLowerCase().contains( "outdated" ) && def != null )
+         {
+             // Pre cancel the event if we are going to try another server
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+index ed94d7db2fb..df4f3661f22 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+@@ -59,7 +59,7 @@ public void exception(Throwable t) throws Exception
+         }
+ 
+         ServerInfo def = con.updateAndGetNextServer( server.getInfo() );
+-        ServerKickEvent event = bungee.getPluginManager().callEvent( new ServerKickEvent( con, server.getInfo(), TextComponent.fromLegacyText( bungee.getTranslation( "server_went_down" ) ), def, ServerKickEvent.State.CONNECTED ) );
++        ServerKickEvent event = bungee.getPluginManager().callEvent( new ServerKickEvent( con, server.getInfo(), TextComponent.fromLegacyText( bungee.getTranslation( "server_went_down" ) ), def, ServerKickEvent.State.CONNECTED, ServerKickEvent.Cause.EXCEPTION ) );
+         if ( event.isCancelled() && event.getCancelServer() != null )
+         {
+             server.setObsolete( true );
+@@ -84,7 +84,7 @@ public void disconnected(ChannelWrapper channel) throws Exception
+         if ( !server.isObsolete() )
+         {
+             ServerInfo def = con.updateAndGetNextServer( server.getInfo() );
+-            ServerKickEvent event = bungee.getPluginManager().callEvent( new ServerKickEvent( con, server.getInfo(), TextComponent.fromLegacyText( bungee.getTranslation( "lost_connection" ) ), def, ServerKickEvent.State.CONNECTED ) );
++            ServerKickEvent event = bungee.getPluginManager().callEvent( new ServerKickEvent( con, server.getInfo(), TextComponent.fromLegacyText( bungee.getTranslation( "lost_connection" ) ), def, ServerKickEvent.State.CONNECTED, ServerKickEvent.Cause.LOST_CONNECTION ) );
+             if ( event.isCancelled() && event.getCancelServer() != null )
+             {
+                 server.setObsolete( true );
+@@ -464,7 +464,7 @@ public void handle(Kick kick) throws Exception
+         {
+             def = null;
+         }
+-        ServerKickEvent event = bungee.getPluginManager().callEvent( new ServerKickEvent( con, server.getInfo(), ComponentSerializer.parse( kick.getMessage() ), def, ServerKickEvent.State.CONNECTED ) );
++        ServerKickEvent event = bungee.getPluginManager().callEvent( new ServerKickEvent( con, server.getInfo(), ComponentSerializer.parse( kick.getMessage() ), def, ServerKickEvent.State.CONNECTED, ServerKickEvent.Cause.SERVER ) );
+         if ( event.isCancelled() && event.getCancelServer() != null )
+         {
+             con.connectNow( event.getCancelServer() );

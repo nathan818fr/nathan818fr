@@ -1,0 +1,1310 @@
+From a746ba6f7bd4c91d09f7aa40c720ef23916ecb53 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 11 Jul 2018 11:15:50 +0200
+Subject: [PATCH 01/11] Only decode packets that are handled by the current
+ handler
+
+---
+ .../bungee/protocol/MinecraftDecoder.java     | 32 +++++++---
+ .../net/md_5/bungee/protocol/Protocol.java    | 11 +++-
+ .../net/md_5/bungee/netty/ChannelWrapper.java | 59 +++++++++++++++++++
+ .../net/md_5/bungee/netty/HandlerBoss.java    |  9 +++
+ 4 files changed, 100 insertions(+), 11 deletions(-)
+
+diff --git a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+index e7cb3803428..daea7810f51 100644
+--- a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
++++ b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+@@ -5,9 +5,10 @@
+ import io.netty.handler.codec.MessageToMessageDecoder;
+ import java.util.List;
+ import lombok.AllArgsConstructor;
++import lombok.Getter;
+ import lombok.Setter;
+ 
+-@AllArgsConstructor
++@Getter
+ public class MinecraftDecoder extends MessageToMessageDecoder<ByteBuf>
+ {
+ 
+@@ -16,6 +17,15 @@ public class MinecraftDecoder extends MessageToMessageDecoder<ByteBuf>
+     private final boolean server;
+     @Setter
+     private int protocolVersion;
++    @Setter
++    private boolean[] unhandledPackets;
++
++    public MinecraftDecoder(Protocol protocol, boolean server, int protocolVersion)
++    {
++        this.protocol = protocol;
++        this.server = server;
++        this.protocolVersion = protocolVersion;
++    }
+ 
+     @Override
+     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception
+@@ -27,18 +37,22 @@ protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) t
+         {
+             int packetId = DefinedPacket.readVarInt( in );
+ 
+-            DefinedPacket packet = prot.createPacket( packetId, protocolVersion );
+-            if ( packet != null )
++            DefinedPacket packet = null;
++            if ( unhandledPackets == null || packetId < 0 || packetId >= unhandledPackets.length || !unhandledPackets[packetId])
+             {
+-                packet.read( in, prot.getDirection(), protocolVersion );
++                packet = prot.createPacket( packetId, protocolVersion );
++                if ( packet != null )
++                {
++                    packet.read( in, prot.getDirection(), protocolVersion );
+ 
+-                if ( in.isReadable() )
++                    if ( in.isReadable() )
++                    {
++                        throw new BadPacketException( "Did not read all bytes from packet " + packet.getClass() + " " + packetId + " Protocol " + protocol + " Direction " + prot );
++                    }
++                } else
+                 {
+-                    throw new BadPacketException( "Did not read all bytes from packet " + packet.getClass() + " " + packetId + " Protocol " + protocol + " Direction " + prot );
++                    in.skipBytes( in.readableBytes() );
+                 }
+-            } else
+-            {
+-                in.skipBytes( in.readableBytes() );
+             }
+ 
+             out.add( new PacketWrapper( packet, slice ) );
+diff --git a/protocol/src/main/java/net/md_5/bungee/protocol/Protocol.java b/protocol/src/main/java/net/md_5/bungee/protocol/Protocol.java
+index cd065631cb3..154dd1f448f 100644
+--- a/protocol/src/main/java/net/md_5/bungee/protocol/Protocol.java
++++ b/protocol/src/main/java/net/md_5/bungee/protocol/Protocol.java
+@@ -289,12 +289,19 @@ private static void dump(int version, DirectionData data)
+     }
+ 
+     @RequiredArgsConstructor
+-    private static class ProtocolData
++    public static class ProtocolData
+     {
+ 
+         private final int protocolVersion;
+         private final TObjectIntMap<Class<? extends DefinedPacket>> packetMap = new TObjectIntHashMap<>( MAX_PACKET_ID );
+         private final Constructor<? extends DefinedPacket>[] packetConstructors = new Constructor[ MAX_PACKET_ID ];
++
++        public Class<? extends DefinedPacket> getPacketClass(int packetId)
++        {
++            Constructor<? extends DefinedPacket> packetConstructor =
++                    packetId >= 0 && packetId < packetConstructors.length ? packetConstructors[packetId] : null;
++            return packetConstructor != null ? packetConstructor.getDeclaringClass() : null;
++        }
+     }
+ 
+     @RequiredArgsConstructor
+@@ -350,7 +357,7 @@ public static class DirectionData
+         @Getter
+         private final ProtocolConstants.Direction direction;
+ 
+-        private ProtocolData getProtocolData(int version)
++        public ProtocolData getProtocolData(int version)
+         {
+             ProtocolData protocol = protocols.get( version );
+             if ( protocol == null && ( protocolPhase != Protocol.GAME ) )
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+index 71df1fd51f9..9feaa3f23f8 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+@@ -5,12 +5,15 @@
+ import io.netty.channel.ChannelFutureListener;
+ import io.netty.channel.ChannelHandler;
+ import io.netty.channel.ChannelHandlerContext;
++import java.lang.reflect.Method;
+ import java.net.InetSocketAddress;
++import java.util.Arrays;
+ import java.util.concurrent.TimeUnit;
+ import lombok.Getter;
+ import lombok.Setter;
+ import net.md_5.bungee.compress.PacketCompressor;
+ import net.md_5.bungee.compress.PacketDecompressor;
++import net.md_5.bungee.protocol.DefinedPacket;
+ import net.md_5.bungee.protocol.MinecraftDecoder;
+ import net.md_5.bungee.protocol.MinecraftEncoder;
+ import net.md_5.bungee.protocol.PacketWrapper;
+@@ -21,6 +24,7 @@ public class ChannelWrapper
+ {
+ 
+     private final Channel ch;
++    private Class<? extends PacketHandler> handlerClass;
+     @Getter
+     @Setter
+     private InetSocketAddress remoteAddress;
+@@ -35,16 +39,39 @@ public ChannelWrapper(ChannelHandlerContext ctx)
+         this.remoteAddress = (InetSocketAddress) this.ch.remoteAddress();
+     }
+ 
++    public void setHandlerClass(Class<? extends PacketHandler> handlerClass)
++    {
++        Preconditions.checkState(ch.eventLoop().inEventLoop()); // FIXME: Tests
++        this.handlerClass = handlerClass;
++        updateUnhandledPackets();
++    }
++
+     public void setProtocol(Protocol protocol)
+     {
++        Preconditions.checkState(ch.eventLoop().inEventLoop()); // FIXME: Tests
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocol( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocol( protocol );
++        updateUnhandledPackets();
+     }
+ 
+     public void setVersion(int protocol)
+     {
++        Preconditions.checkState(ch.eventLoop().inEventLoop()); // FIXME: Tests
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocolVersion( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocolVersion( protocol );
++        updateUnhandledPackets();
++    }
++
++    private void updateUnhandledPackets()
++    {
++        MinecraftDecoder decoder = ch.pipeline().get( MinecraftDecoder.class );
++        if ( handlerClass == null )
++        {
++            decoder.setUnhandledPackets( null );
++        } else
++        {
++            decoder.setUnhandledPackets( computeUnhandledPackets( handlerClass, decoder.getProtocol(), decoder.isServer(), decoder.getProtocolVersion() ) );
++        }
+     }
+ 
+     public void write(Object packet)
+@@ -153,4 +180,36 @@ public void setCompressionThreshold(int compressionThreshold)
+             ch.pipeline().remove( "decompress" );
+         }
+     }
++
++    private static boolean[] computeUnhandledPackets(Class<? extends PacketHandler> handlerClass, Protocol protocol, boolean server, int protocolVersion)
++    {
++        // TODO: Cache results
++        Protocol.DirectionData protDir = ( server ) ? protocol.TO_SERVER : protocol.TO_CLIENT;
++        Protocol.ProtocolData protData = protDir.getProtocolData( protocolVersion );
++        boolean[] ignoredPackets = new boolean[ Protocol.MAX_PACKET_ID ];
++        for ( int i = 0; i < Protocol.MAX_PACKET_ID; i++ )
++        {
++            Class<? extends DefinedPacket> packetClass = protData.getPacketClass( i );
++            if ( packetClass == null )
++            {
++                ignoredPackets[i] = true;
++            }
++            else
++            {
++                try
++                {
++                    Method defaultMethod = PacketHandler.class.getMethod( "handle", packetClass );
++                    Method handlerMethod = handlerClass.getMethod( "handle", packetClass );
++                    if ( defaultMethod.equals(handlerMethod) )
++                    {
++                        ignoredPackets[i] = true;
++                    }
++                } catch (NoSuchMethodException e)
++                {
++                    ignoredPackets[i] = true;
++                }
++            }
++        }
++        return ignoredPackets;
++    }
+ }
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java b/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
+index 7e7cf7bed49..786d54ca0ca 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
+@@ -32,6 +32,11 @@ public void setHandler(PacketHandler handler)
+     {
+         Preconditions.checkArgument( handler != null, "handler" );
+         this.handler = handler;
++        if ( channel != null )
++        {
++            Preconditions.checkState(channel.getHandle().eventLoop().inEventLoop()); // FIXME: Tests
++            channel.setHandlerClass( handler.getClass() );
++        }
+     }
+ 
+     @Override
+@@ -40,6 +45,10 @@ public void channelActive(ChannelHandlerContext ctx) throws Exception
+         if ( handler != null )
+         {
+             channel = new ChannelWrapper( ctx );
++            if ( handler != null )
++            {
++                channel.setHandlerClass( handler.getClass() );
++            }
+             handler.connected( channel );
+ 
+             if ( !( handler instanceof InitialHandler || handler instanceof PingHandler ) )
+
+From dd6611e5a658b1ebcfd1b9924115fb143dfcb2f8 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 11 Jul 2018 11:28:57 +0200
+Subject: [PATCH 02/11] Cache computeUnhandledPackets result
+
+---
+ .../net/md_5/bungee/netty/ChannelWrapper.java | 41 +++++++++++--------
+ 1 file changed, 24 insertions(+), 17 deletions(-)
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+index 9feaa3f23f8..8be6a8eb744 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+@@ -7,7 +7,8 @@
+ import io.netty.channel.ChannelHandlerContext;
+ import java.lang.reflect.Method;
+ import java.net.InetSocketAddress;
+-import java.util.Arrays;
++import java.util.Map;
++import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.TimeUnit;
+ import lombok.Getter;
+ import lombok.Setter;
+@@ -23,6 +24,8 @@
+ public class ChannelWrapper
+ {
+ 
++    private static final Map<Protocol.ProtocolData, boolean[]> UNHANDLED_PACKETS_CACHE = new ConcurrentHashMap<>();
++
+     private final Channel ch;
+     private Class<? extends PacketHandler> handlerClass;
+     @Getter
+@@ -183,32 +186,36 @@ public void setCompressionThreshold(int compressionThreshold)
+ 
+     private static boolean[] computeUnhandledPackets(Class<? extends PacketHandler> handlerClass, Protocol protocol, boolean server, int protocolVersion)
+     {
+-        // TODO: Cache results
+         Protocol.DirectionData protDir = ( server ) ? protocol.TO_SERVER : protocol.TO_CLIENT;
+         Protocol.ProtocolData protData = protDir.getProtocolData( protocolVersion );
+-        boolean[] ignoredPackets = new boolean[ Protocol.MAX_PACKET_ID ];
+-        for ( int i = 0; i < Protocol.MAX_PACKET_ID; i++ )
++        boolean[] ignoredPackets = UNHANDLED_PACKETS_CACHE.get( protData );
++        if ( ignoredPackets == null )
+         {
+-            Class<? extends DefinedPacket> packetClass = protData.getPacketClass( i );
+-            if ( packetClass == null )
+-            {
+-                ignoredPackets[i] = true;
+-            }
+-            else
++            ignoredPackets = new boolean[ Protocol.MAX_PACKET_ID ];
++            for ( int i = 0; i < Protocol.MAX_PACKET_ID; i++ )
+             {
+-                try
++                Class<? extends DefinedPacket> packetClass = protData.getPacketClass( i );
++                if ( packetClass == null )
+                 {
+-                    Method defaultMethod = PacketHandler.class.getMethod( "handle", packetClass );
+-                    Method handlerMethod = handlerClass.getMethod( "handle", packetClass );
+-                    if ( defaultMethod.equals(handlerMethod) )
++                    ignoredPackets[i] = true;
++                }
++                else
++                {
++                    try
++                    {
++                        Method defaultMethod = PacketHandler.class.getMethod( "handle", packetClass );
++                        Method handlerMethod = handlerClass.getMethod( "handle", packetClass );
++                        if ( defaultMethod.equals(handlerMethod) )
++                        {
++                            ignoredPackets[i] = true;
++                        }
++                    } catch (NoSuchMethodException e)
+                     {
+                         ignoredPackets[i] = true;
+                     }
+-                } catch (NoSuchMethodException e)
+-                {
+-                    ignoredPackets[i] = true;
+                 }
+             }
++            UNHANDLED_PACKETS_CACHE.put( protData, ignoredPackets );
+         }
+         return ignoredPackets;
+     }
+
+From 7a57c2e31cd13c02a225ef53201c38bf765abe55 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 11 Jul 2018 11:34:59 +0200
+Subject: [PATCH 03/11] Invert the logic (unhandled -> handled)
+
+---
+ .../bungee/protocol/MinecraftDecoder.java     |  5 +--
+ .../net/md_5/bungee/netty/ChannelWrapper.java | 39 ++++++++-----------
+ 2 files changed, 19 insertions(+), 25 deletions(-)
+
+diff --git a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+index daea7810f51..c376aa2272f 100644
+--- a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
++++ b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+@@ -4,7 +4,6 @@
+ import io.netty.channel.ChannelHandlerContext;
+ import io.netty.handler.codec.MessageToMessageDecoder;
+ import java.util.List;
+-import lombok.AllArgsConstructor;
+ import lombok.Getter;
+ import lombok.Setter;
+ 
+@@ -18,7 +17,7 @@ public class MinecraftDecoder extends MessageToMessageDecoder<ByteBuf>
+     @Setter
+     private int protocolVersion;
+     @Setter
+-    private boolean[] unhandledPackets;
++    private boolean[] handledPackets;
+ 
+     public MinecraftDecoder(Protocol protocol, boolean server, int protocolVersion)
+     {
+@@ -38,7 +37,7 @@ protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) t
+             int packetId = DefinedPacket.readVarInt( in );
+ 
+             DefinedPacket packet = null;
+-            if ( unhandledPackets == null || packetId < 0 || packetId >= unhandledPackets.length || !unhandledPackets[packetId])
++            if ( handledPackets == null || (packetId >= 0 && packetId < handledPackets.length && handledPackets[packetId]))
+             {
+                 packet = prot.createPacket( packetId, protocolVersion );
+                 if ( packet != null )
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+index 8be6a8eb744..cf0056346cc 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+@@ -24,7 +24,7 @@
+ public class ChannelWrapper
+ {
+ 
+-    private static final Map<Protocol.ProtocolData, boolean[]> UNHANDLED_PACKETS_CACHE = new ConcurrentHashMap<>();
++    private static final Map<Protocol.ProtocolData, boolean[]> HANDLED_PACKETS_CACHE = new ConcurrentHashMap<>();
+ 
+     private final Channel ch;
+     private Class<? extends PacketHandler> handlerClass;
+@@ -46,7 +46,7 @@ public void setHandlerClass(Class<? extends PacketHandler> handlerClass)
+     {
+         Preconditions.checkState(ch.eventLoop().inEventLoop()); // FIXME: Tests
+         this.handlerClass = handlerClass;
+-        updateUnhandledPackets();
++        updateHandledPackets();
+     }
+ 
+     public void setProtocol(Protocol protocol)
+@@ -54,7 +54,7 @@ public void setProtocol(Protocol protocol)
+         Preconditions.checkState(ch.eventLoop().inEventLoop()); // FIXME: Tests
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocol( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocol( protocol );
+-        updateUnhandledPackets();
++        updateHandledPackets();
+     }
+ 
+     public void setVersion(int protocol)
+@@ -62,18 +62,18 @@ public void setVersion(int protocol)
+         Preconditions.checkState(ch.eventLoop().inEventLoop()); // FIXME: Tests
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocolVersion( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocolVersion( protocol );
+-        updateUnhandledPackets();
++        updateHandledPackets();
+     }
+ 
+-    private void updateUnhandledPackets()
++    private void updateHandledPackets()
+     {
+         MinecraftDecoder decoder = ch.pipeline().get( MinecraftDecoder.class );
+         if ( handlerClass == null )
+         {
+-            decoder.setUnhandledPackets( null );
++            decoder.setHandledPackets( null );
+         } else
+         {
+-            decoder.setUnhandledPackets( computeUnhandledPackets( handlerClass, decoder.getProtocol(), decoder.isServer(), decoder.getProtocolVersion() ) );
++            decoder.setHandledPackets( computeHandledPackets( handlerClass, decoder.getProtocol(), decoder.isServer(), decoder.getProtocolVersion() ) );
+         }
+     }
+ 
+@@ -184,39 +184,34 @@ public void setCompressionThreshold(int compressionThreshold)
+         }
+     }
+ 
+-    private static boolean[] computeUnhandledPackets(Class<? extends PacketHandler> handlerClass, Protocol protocol, boolean server, int protocolVersion)
++    private static boolean[] computeHandledPackets(Class<? extends PacketHandler> handlerClass, Protocol protocol, boolean server, int protocolVersion)
+     {
+         Protocol.DirectionData protDir = ( server ) ? protocol.TO_SERVER : protocol.TO_CLIENT;
+         Protocol.ProtocolData protData = protDir.getProtocolData( protocolVersion );
+-        boolean[] ignoredPackets = UNHANDLED_PACKETS_CACHE.get( protData );
+-        if ( ignoredPackets == null )
++        boolean[] handledPackets = HANDLED_PACKETS_CACHE.get( protData );
++        if ( handledPackets == null )
+         {
+-            ignoredPackets = new boolean[ Protocol.MAX_PACKET_ID ];
++            handledPackets = new boolean[ Protocol.MAX_PACKET_ID ];
+             for ( int i = 0; i < Protocol.MAX_PACKET_ID; i++ )
+             {
+                 Class<? extends DefinedPacket> packetClass = protData.getPacketClass( i );
+-                if ( packetClass == null )
+-                {
+-                    ignoredPackets[i] = true;
+-                }
+-                else
++                if ( packetClass != null )
+                 {
+                     try
+                     {
+                         Method defaultMethod = PacketHandler.class.getMethod( "handle", packetClass );
+                         Method handlerMethod = handlerClass.getMethod( "handle", packetClass );
+-                        if ( defaultMethod.equals(handlerMethod) )
++                        if ( !defaultMethod.equals(handlerMethod) )
+                         {
+-                            ignoredPackets[i] = true;
++                            handledPackets[i] = true;
+                         }
+-                    } catch (NoSuchMethodException e)
++                    } catch (NoSuchMethodException ignored)
+                     {
+-                        ignoredPackets[i] = true;
+                     }
+                 }
+             }
+-            UNHANDLED_PACKETS_CACHE.put( protData, ignoredPackets );
++            HANDLED_PACKETS_CACHE.put( protData, handledPackets );
+         }
+-        return ignoredPackets;
++        return handledPackets;
+     }
+ }
+
+From a496cd4ddd1c0a4172eb34d2f68014b0f9133ebd Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 11 Jul 2018 11:41:03 +0200
+Subject: [PATCH 04/11] Remove testing states preconditions
+
+---
+ proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java | 3 ---
+ proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java    | 1 -
+ 2 files changed, 4 deletions(-)
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+index cf0056346cc..f030919395a 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+@@ -44,14 +44,12 @@ public ChannelWrapper(ChannelHandlerContext ctx)
+ 
+     public void setHandlerClass(Class<? extends PacketHandler> handlerClass)
+     {
+-        Preconditions.checkState(ch.eventLoop().inEventLoop()); // FIXME: Tests
+         this.handlerClass = handlerClass;
+         updateHandledPackets();
+     }
+ 
+     public void setProtocol(Protocol protocol)
+     {
+-        Preconditions.checkState(ch.eventLoop().inEventLoop()); // FIXME: Tests
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocol( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocol( protocol );
+         updateHandledPackets();
+@@ -59,7 +57,6 @@ public void setProtocol(Protocol protocol)
+ 
+     public void setVersion(int protocol)
+     {
+-        Preconditions.checkState(ch.eventLoop().inEventLoop()); // FIXME: Tests
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocolVersion( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocolVersion( protocol );
+         updateHandledPackets();
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java b/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
+index 786d54ca0ca..5513f504942 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
+@@ -34,7 +34,6 @@ public void setHandler(PacketHandler handler)
+         this.handler = handler;
+         if ( channel != null )
+         {
+-            Preconditions.checkState(channel.getHandle().eventLoop().inEventLoop()); // FIXME: Tests
+             channel.setHandlerClass( handler.getClass() );
+         }
+     }
+
+From 8151c71b3d3889893d373703052b6dc40ea4331e Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 11 Jul 2018 11:53:22 +0200
+Subject: [PATCH 05/11] Fix the coding style
+
+---
+ .../main/java/net/md_5/bungee/protocol/MinecraftDecoder.java  | 2 +-
+ proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+index c376aa2272f..497c7d87b91 100644
+--- a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
++++ b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+@@ -37,7 +37,7 @@ protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) t
+             int packetId = DefinedPacket.readVarInt( in );
+ 
+             DefinedPacket packet = null;
+-            if ( handledPackets == null || (packetId >= 0 && packetId < handledPackets.length && handledPackets[packetId]))
++            if ( handledPackets == null || ( packetId >= 0 && packetId < handledPackets.length && handledPackets[packetId] ) )
+             {
+                 packet = prot.createPacket( packetId, protocolVersion );
+                 if ( packet != null )
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+index f030919395a..d2e838d359c 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+@@ -198,11 +198,11 @@ private static boolean[] computeHandledPackets(Class<? extends PacketHandler> ha
+                     {
+                         Method defaultMethod = PacketHandler.class.getMethod( "handle", packetClass );
+                         Method handlerMethod = handlerClass.getMethod( "handle", packetClass );
+-                        if ( !defaultMethod.equals(handlerMethod) )
++                        if ( !defaultMethod.equals( handlerMethod ) )
+                         {
+                             handledPackets[i] = true;
+                         }
+-                    } catch (NoSuchMethodException ignored)
++                    } catch ( NoSuchMethodException ignored )
+                     {
+                     }
+                 }
+
+From 7f10d3ca01fcf23f457d22daa197fb4c19d99aa0 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 11 Jul 2018 12:32:35 +0200
+Subject: [PATCH 06/11] Only slice decoded buffers when needed (if EntityMap
+ varint rewritten)
+
+---
+ .../bungee/protocol/MinecraftDecoder.java     | 21 ++++++--
+ .../bungee/connection/DownstreamBridge.java   |  2 +
+ .../bungee/connection/UpstreamBridge.java     |  2 +
+ .../net/md_5/bungee/entitymap/EntityMap.java  | 13 +++++
+ .../net/md_5/bungee/netty/ChannelWrapper.java | 54 +++++++++++++++++--
+ .../net/md_5/bungee/netty/HandlerBoss.java    |  4 +-
+ 6 files changed, 84 insertions(+), 12 deletions(-)
+
+diff --git a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+index 497c7d87b91..22507153de5 100644
+--- a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
++++ b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+@@ -17,6 +17,8 @@ public class MinecraftDecoder extends MessageToMessageDecoder<ByteBuf>
+     @Setter
+     private int protocolVersion;
+     @Setter
++    private boolean[] copiedBuffers;
++    @Setter
+     private boolean[] handledPackets;
+ 
+     public MinecraftDecoder(Protocol protocol, boolean server, int protocolVersion)
+@@ -30,11 +32,20 @@ public MinecraftDecoder(Protocol protocol, boolean server, int protocolVersion)
+     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception
+     {
+         Protocol.DirectionData prot = ( server ) ? protocol.TO_SERVER : protocol.TO_CLIENT;
+-        ByteBuf slice = in.copy(); // Can't slice this one due to EntityMap :(
++        ByteBuf buf = null;
+ 
+         try
+         {
++            int markIndex = in.readerIndex();
++            int markReadable = in.readableBytes();
+             int packetId = DefinedPacket.readVarInt( in );
++            if ( copiedBuffers != null && packetId >= 0 && packetId < copiedBuffers.length && copiedBuffers[packetId] )
++            {
++                buf =  in.copy( markIndex, markReadable ); // Can't slice this one due to EntityMap varint :(
++            } else
++            {
++                buf =  in.slice( markIndex, markReadable ).retain();
++            }
+ 
+             DefinedPacket packet = null;
+             if ( handledPackets == null || ( packetId >= 0 && packetId < handledPackets.length && handledPackets[packetId] ) )
+@@ -54,13 +65,13 @@ protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) t
+                 }
+             }
+ 
+-            out.add( new PacketWrapper( packet, slice ) );
+-            slice = null;
++            out.add( new PacketWrapper( packet, buf ) );
++            buf = null;
+         } finally
+         {
+-            if ( slice != null )
++            if ( buf != null )
+             {
+-                slice.release();
++                buf.release();
+             }
+         }
+     }
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+index 931f3f30d5e..29b86492d26 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+@@ -7,6 +7,7 @@
+ import io.netty.buffer.ByteBuf;
+ import io.netty.buffer.ByteBufAllocator;
+ import io.netty.buffer.Unpooled;
++import lombok.Getter;
+ import lombok.RequiredArgsConstructor;
+ import net.md_5.bungee.ServerConnection;
+ import net.md_5.bungee.api.chat.TextComponent;
+@@ -48,6 +49,7 @@ public class DownstreamBridge extends PacketHandler
+ {
+ 
+     private final ProxyServer bungee;
++    @Getter
+     private final UserConnection con;
+     private final ServerConnection server;
+ 
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+index 92d22502f61..ad3bde1ff71 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+@@ -4,6 +4,7 @@
+ import io.netty.channel.Channel;
+ import java.util.ArrayList;
+ import java.util.List;
++import lombok.Getter;
+ import net.md_5.bungee.BungeeCord;
+ import net.md_5.bungee.UserConnection;
+ import net.md_5.bungee.Util;
+@@ -31,6 +32,7 @@ public class UpstreamBridge extends PacketHandler
+ {
+ 
+     private final ProxyServer bungee;
++    @Getter
+     private final UserConnection con;
+ 
+     public UpstreamBridge(ProxyServer bungee, UserConnection con)
+diff --git a/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java b/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java
+index 847a3ecac7a..24e980fb557 100644
+--- a/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java
++++ b/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java
+@@ -71,6 +71,18 @@ protected void addRewrite(int id, ProtocolConstants.Direction direction, boolean
+         }
+     }
+ 
++    public boolean hasServerboundRewrite(int packetId, boolean varint)
++    {
++        boolean[] array = !varint ? serverboundInts : serverboundVarInts;
++        return packetId >= 0 && packetId < array.length && array[packetId];
++    }
++
++    public boolean hasClientboundRewrite(int packetId, boolean varint)
++    {
++        boolean[] array = !varint ? clientboundInts : clientboundVarInts;
++        return packetId >= 0 && packetId < array.length && array[packetId];
++    }
++
+     public void rewriteServerbound(ByteBuf packet, int oldId, int newId)
+     {
+         rewrite( packet, oldId, newId, serverboundInts, serverboundVarInts );
+@@ -216,6 +228,7 @@ private static void rewrite(ByteBuf packet, int oldId, int newId, boolean[] ints
+             rewriteInt( packet, oldId, newId, readerIndex + packetIdLength );
+         } else if ( varints[packetId] )
+         {
++            newId = 1048576;
+             rewriteVarInt( packet, oldId, newId, readerIndex + packetIdLength );
+         }
+         packet.readerIndex( readerIndex );
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+index d2e838d359c..d1f2164f272 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+@@ -14,6 +14,9 @@
+ import lombok.Setter;
+ import net.md_5.bungee.compress.PacketCompressor;
+ import net.md_5.bungee.compress.PacketDecompressor;
++import net.md_5.bungee.connection.DownstreamBridge;
++import net.md_5.bungee.connection.UpstreamBridge;
++import net.md_5.bungee.entitymap.EntityMap;
+ import net.md_5.bungee.protocol.DefinedPacket;
+ import net.md_5.bungee.protocol.MinecraftDecoder;
+ import net.md_5.bungee.protocol.MinecraftEncoder;
+@@ -27,7 +30,7 @@ public class ChannelWrapper
+     private static final Map<Protocol.ProtocolData, boolean[]> HANDLED_PACKETS_CACHE = new ConcurrentHashMap<>();
+ 
+     private final Channel ch;
+-    private Class<? extends PacketHandler> handlerClass;
++    private PacketHandler handler;
+     @Getter
+     @Setter
+     private InetSocketAddress remoteAddress;
+@@ -42,9 +45,10 @@ public ChannelWrapper(ChannelHandlerContext ctx)
+         this.remoteAddress = (InetSocketAddress) this.ch.remoteAddress();
+     }
+ 
+-    public void setHandlerClass(Class<? extends PacketHandler> handlerClass)
++    public void setHandler(PacketHandler handler)
+     {
+-        this.handlerClass = handlerClass;
++        this.handler = handler;
++        updateRewrittenPackets();
+         updateHandledPackets();
+     }
+ 
+@@ -52,6 +56,7 @@ public void setProtocol(Protocol protocol)
+     {
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocol( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocol( protocol );
++        updateRewrittenPackets();
+         updateHandledPackets();
+     }
+ 
+@@ -59,18 +64,31 @@ public void setVersion(int protocol)
+     {
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocolVersion( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocolVersion( protocol );
++        updateRewrittenPackets();
+         updateHandledPackets();
+     }
+ 
++    private void updateRewrittenPackets()
++    {
++        MinecraftDecoder decoder = ch.pipeline().get( MinecraftDecoder.class );
++        if ( handler == null )
++        {
++            decoder.setCopiedBuffers( null );
++        } else
++        {
++            decoder.setCopiedBuffers( computeRewrittenPackets( handler, decoder.getProtocol(), decoder.isServer(), decoder.getProtocolVersion() ) );
++        }
++    }
++
+     private void updateHandledPackets()
+     {
+         MinecraftDecoder decoder = ch.pipeline().get( MinecraftDecoder.class );
+-        if ( handlerClass == null )
++        if ( handler == null )
+         {
+             decoder.setHandledPackets( null );
+         } else
+         {
+-            decoder.setHandledPackets( computeHandledPackets( handlerClass, decoder.getProtocol(), decoder.isServer(), decoder.getProtocolVersion() ) );
++            decoder.setHandledPackets( computeHandledPackets( handler.getClass(), decoder.getProtocol(), decoder.isServer(), decoder.getProtocolVersion() ) );
+         }
+     }
+ 
+@@ -181,6 +199,32 @@ public void setCompressionThreshold(int compressionThreshold)
+         }
+     }
+ 
++    private static boolean[] computeRewrittenPackets(PacketHandler handler, Protocol protocol, boolean server, int protocolVersion)
++    {
++        // TODO: Cache results
++        EntityMap entityMap;
++        if ( handler instanceof UpstreamBridge )
++        {
++            entityMap = ( (UpstreamBridge) handler ).getCon().getEntityRewrite();
++        } else if ( handler instanceof DownstreamBridge )
++        {
++            entityMap = ( (DownstreamBridge) handler ).getCon().getEntityRewrite();
++        } else
++        {
++            return null;
++        }
++        boolean[] rewrittenPackets = new boolean[ Protocol.MAX_PACKET_ID ];
++        for ( int i = 0; i < Protocol.MAX_PACKET_ID; i++ )
++        {
++            boolean rewritten = server ? entityMap.hasServerboundRewrite( i, true ) : entityMap.hasClientboundRewrite( i, true );
++            if ( rewritten )
++            {
++                rewrittenPackets[i] = true;
++            }
++        }
++        return rewrittenPackets;
++    }
++
+     private static boolean[] computeHandledPackets(Class<? extends PacketHandler> handlerClass, Protocol protocol, boolean server, int protocolVersion)
+     {
+         Protocol.DirectionData protDir = ( server ) ? protocol.TO_SERVER : protocol.TO_CLIENT;
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java b/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
+index 5513f504942..1ce66d8ceae 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/HandlerBoss.java
+@@ -34,7 +34,7 @@ public void setHandler(PacketHandler handler)
+         this.handler = handler;
+         if ( channel != null )
+         {
+-            channel.setHandlerClass( handler.getClass() );
++            channel.setHandler( handler );
+         }
+     }
+ 
+@@ -46,7 +46,7 @@ public void channelActive(ChannelHandlerContext ctx) throws Exception
+             channel = new ChannelWrapper( ctx );
+             if ( handler != null )
+             {
+-                channel.setHandlerClass( handler.getClass() );
++                channel.setHandler( handler );
+             }
+             handler.connected( channel );
+ 
+
+From 606f97bb7c9bf82ddf1f12913e386b20a8443839 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 11 Jul 2018 12:36:04 +0200
+Subject: [PATCH 07/11] Cache computeRewrittenPackets result
+
+---
+ .../net/md_5/bungee/netty/ChannelWrapper.java | 28 +++++++++++++++----
+ 1 file changed, 22 insertions(+), 6 deletions(-)
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+index d1f2164f272..5737dba8cd0 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+@@ -10,7 +10,9 @@
+ import java.util.Map;
+ import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.TimeUnit;
++import lombok.EqualsAndHashCode;
+ import lombok.Getter;
++import lombok.RequiredArgsConstructor;
+ import lombok.Setter;
+ import net.md_5.bungee.compress.PacketCompressor;
+ import net.md_5.bungee.compress.PacketDecompressor;
+@@ -27,6 +29,7 @@
+ public class ChannelWrapper
+ {
+ 
++    private static final Map<RewrittenPacketsCacheKey, boolean[]> REWRITTEN_PACKETS_CACHE = new ConcurrentHashMap<>();
+     private static final Map<Protocol.ProtocolData, boolean[]> HANDLED_PACKETS_CACHE = new ConcurrentHashMap<>();
+ 
+     private final Channel ch;
+@@ -201,7 +204,6 @@ public void setCompressionThreshold(int compressionThreshold)
+ 
+     private static boolean[] computeRewrittenPackets(PacketHandler handler, Protocol protocol, boolean server, int protocolVersion)
+     {
+-        // TODO: Cache results
+         EntityMap entityMap;
+         if ( handler instanceof UpstreamBridge )
+         {
+@@ -213,14 +215,20 @@ private static boolean[] computeRewrittenPackets(PacketHandler handler, Protocol
+         {
+             return null;
+         }
+-        boolean[] rewrittenPackets = new boolean[ Protocol.MAX_PACKET_ID ];
+-        for ( int i = 0; i < Protocol.MAX_PACKET_ID; i++ )
++        RewrittenPacketsCacheKey cacheKey = new RewrittenPacketsCacheKey( entityMap.getClass(), server );
++        boolean[] rewrittenPackets = REWRITTEN_PACKETS_CACHE.get( cacheKey );
++        if ( rewrittenPackets == null )
+         {
+-            boolean rewritten = server ? entityMap.hasServerboundRewrite( i, true ) : entityMap.hasClientboundRewrite( i, true );
+-            if ( rewritten )
++            rewrittenPackets = new boolean[ Protocol.MAX_PACKET_ID ];
++            for ( int i = 0; i < Protocol.MAX_PACKET_ID; i++ )
+             {
+-                rewrittenPackets[i] = true;
++                boolean rewritten = server ? entityMap.hasServerboundRewrite( i, true ) : entityMap.hasClientboundRewrite( i, true );
++                if ( rewritten )
++                {
++                    rewrittenPackets[i] = true;
++                }
+             }
++            REWRITTEN_PACKETS_CACHE.put( cacheKey, rewrittenPackets );
+         }
+         return rewrittenPackets;
+     }
+@@ -255,4 +263,12 @@ private static boolean[] computeHandledPackets(Class<? extends PacketHandler> ha
+         }
+         return handledPackets;
+     }
++
++    @RequiredArgsConstructor
++    @EqualsAndHashCode
++    private static class RewrittenPacketsCacheKey
++    {
++        private final Class<? extends EntityMap> entityMapClass;
++        private final boolean server;
++    }
+ }
+
+From 075648a86fbe657e87c0b92220ee89e71cc95d80 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 11 Jul 2018 12:37:01 +0200
+Subject: [PATCH 08/11] Whoops, remove debug code
+
+---
+ proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java b/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java
+index 24e980fb557..72958da88a0 100644
+--- a/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java
++++ b/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java
+@@ -228,7 +228,6 @@ private static void rewrite(ByteBuf packet, int oldId, int newId, boolean[] ints
+             rewriteInt( packet, oldId, newId, readerIndex + packetIdLength );
+         } else if ( varints[packetId] )
+         {
+-            newId = 1048576;
+             rewriteVarInt( packet, oldId, newId, readerIndex + packetIdLength );
+         }
+         packet.readerIndex( readerIndex );
+
+From 21f8e4f40a66de2734ba6e7037eeabcbbb8b74c0 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 11 Jul 2018 12:45:53 +0200
+Subject: [PATCH 09/11] Fully rename 'rewrittenPackets' to 'copiedBuffers'
+
+---
+ .../net/md_5/bungee/netty/ChannelWrapper.java | 34 +++++++++----------
+ 1 file changed, 17 insertions(+), 17 deletions(-)
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+index 5737dba8cd0..c50d11abcb9 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+@@ -29,7 +29,7 @@
+ public class ChannelWrapper
+ {
+ 
+-    private static final Map<RewrittenPacketsCacheKey, boolean[]> REWRITTEN_PACKETS_CACHE = new ConcurrentHashMap<>();
++    private static final Map<CopiedBuffersCacheKey, boolean[]> COPIED_BUFFERS_CACHE = new ConcurrentHashMap<>();
+     private static final Map<Protocol.ProtocolData, boolean[]> HANDLED_PACKETS_CACHE = new ConcurrentHashMap<>();
+ 
+     private final Channel ch;
+@@ -51,7 +51,7 @@ public ChannelWrapper(ChannelHandlerContext ctx)
+     public void setHandler(PacketHandler handler)
+     {
+         this.handler = handler;
+-        updateRewrittenPackets();
++        updateCopiedBuffers();
+         updateHandledPackets();
+     }
+ 
+@@ -59,7 +59,7 @@ public void setProtocol(Protocol protocol)
+     {
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocol( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocol( protocol );
+-        updateRewrittenPackets();
++        updateCopiedBuffers();
+         updateHandledPackets();
+     }
+ 
+@@ -67,11 +67,11 @@ public void setVersion(int protocol)
+     {
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocolVersion( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocolVersion( protocol );
+-        updateRewrittenPackets();
++        updateCopiedBuffers();
+         updateHandledPackets();
+     }
+ 
+-    private void updateRewrittenPackets()
++    private void updateCopiedBuffers()
+     {
+         MinecraftDecoder decoder = ch.pipeline().get( MinecraftDecoder.class );
+         if ( handler == null )
+@@ -79,7 +79,7 @@ private void updateRewrittenPackets()
+             decoder.setCopiedBuffers( null );
+         } else
+         {
+-            decoder.setCopiedBuffers( computeRewrittenPackets( handler, decoder.getProtocol(), decoder.isServer(), decoder.getProtocolVersion() ) );
++            decoder.setCopiedBuffers( computeCopiedBuffers( handler, decoder.getProtocol(), decoder.isServer(), decoder.getProtocolVersion() ) );
+         }
+     }
+ 
+@@ -202,7 +202,7 @@ public void setCompressionThreshold(int compressionThreshold)
+         }
+     }
+ 
+-    private static boolean[] computeRewrittenPackets(PacketHandler handler, Protocol protocol, boolean server, int protocolVersion)
++    private static boolean[] computeCopiedBuffers(PacketHandler handler, Protocol protocol, boolean server, int protocolVersion)
+     {
+         EntityMap entityMap;
+         if ( handler instanceof UpstreamBridge )
+@@ -215,22 +215,22 @@ private static boolean[] computeRewrittenPackets(PacketHandler handler, Protocol
+         {
+             return null;
+         }
+-        RewrittenPacketsCacheKey cacheKey = new RewrittenPacketsCacheKey( entityMap.getClass(), server );
+-        boolean[] rewrittenPackets = REWRITTEN_PACKETS_CACHE.get( cacheKey );
+-        if ( rewrittenPackets == null )
++        CopiedBuffersCacheKey cacheKey = new CopiedBuffersCacheKey( entityMap.getClass(), server );
++        boolean[] copiedBuffers = COPIED_BUFFERS_CACHE.get( cacheKey );
++        if ( copiedBuffers == null )
+         {
+-            rewrittenPackets = new boolean[ Protocol.MAX_PACKET_ID ];
++            copiedBuffers = new boolean[ Protocol.MAX_PACKET_ID ];
+             for ( int i = 0; i < Protocol.MAX_PACKET_ID; i++ )
+             {
+-                boolean rewritten = server ? entityMap.hasServerboundRewrite( i, true ) : entityMap.hasClientboundRewrite( i, true );
+-                if ( rewritten )
++                boolean varintRewritten = server ? entityMap.hasServerboundRewrite( i, true ) : entityMap.hasClientboundRewrite( i, true );
++                if ( varintRewritten )
+                 {
+-                    rewrittenPackets[i] = true;
++                    copiedBuffers[i] = true;
+                 }
+             }
+-            REWRITTEN_PACKETS_CACHE.put( cacheKey, rewrittenPackets );
++            COPIED_BUFFERS_CACHE.put( cacheKey, copiedBuffers );
+         }
+-        return rewrittenPackets;
++        return copiedBuffers;
+     }
+ 
+     private static boolean[] computeHandledPackets(Class<? extends PacketHandler> handlerClass, Protocol protocol, boolean server, int protocolVersion)
+@@ -266,7 +266,7 @@ private static boolean[] computeHandledPackets(Class<? extends PacketHandler> ha
+ 
+     @RequiredArgsConstructor
+     @EqualsAndHashCode
+-    private static class RewrittenPacketsCacheKey
++    private static class CopiedBuffersCacheKey
+     {
+         private final Class<? extends EntityMap> entityMapClass;
+         private final boolean server;
+
+From 7102152b390f336e00894218ce4bdfcdcc9db6a9 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 11 Jul 2018 14:56:49 +0200
+Subject: [PATCH 10/11] Remove conditial buffer slice/copy
+
+---
+ .../bungee/protocol/MinecraftDecoder.java     | 21 ++-----
+ .../net/md_5/bungee/netty/ChannelWrapper.java | 60 -------------------
+ 2 files changed, 5 insertions(+), 76 deletions(-)
+
+diff --git a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+index 0152e953174..4b8d3d9f659 100644
+--- a/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
++++ b/protocol/src/main/java/net/md_5/bungee/protocol/MinecraftDecoder.java
+@@ -17,8 +17,6 @@ public class MinecraftDecoder extends MessageToMessageDecoder<ByteBuf>
+     @Setter
+     private int protocolVersion;
+     @Setter
+-    private boolean[] copiedBuffers;
+-    @Setter
+     private boolean[] handledPackets;
+ 
+     public MinecraftDecoder(Protocol protocol, boolean server, int protocolVersion)
+@@ -32,20 +30,11 @@ public MinecraftDecoder(Protocol protocol, boolean server, int protocolVersion)
+     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception
+     {
+         Protocol.DirectionData prot = ( server ) ? protocol.TO_SERVER : protocol.TO_CLIENT;
+-        ByteBuf buf = null;
++        ByteBuf slice = in.copy(); // Can't slice this one due to EntityMap :(
+ 
+         try
+         {
+-            int markIndex = in.readerIndex();
+-            int markReadable = in.readableBytes();
+             int packetId = DefinedPacket.readVarInt( in );
+-            if ( copiedBuffers != null && packetId >= 0 && packetId < copiedBuffers.length && copiedBuffers[packetId] )
+-            {
+-                buf =  in.copy( markIndex, markReadable ); // Can't slice this one due to EntityMap varint :(
+-            } else
+-            {
+-                buf =  in.slice( markIndex, markReadable ).retain();
+-            }
+ 
+             DefinedPacket packet = null;
+             if ( handledPackets == null || ( packetId >= 0 && packetId < handledPackets.length && handledPackets[packetId] ) )
+@@ -65,13 +54,13 @@ protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) t
+                 }
+             }
+ 
+-            out.add( new PacketWrapper( packet, buf ) );
+-            buf = null;
++            out.add( new PacketWrapper( packet, slice ) );
++            slice = null;
+         } finally
+         {
+-            if ( buf != null )
++            if ( slice != null )
+             {
+-                buf.release();
++                slice.release();
+             }
+         }
+     }
+diff --git a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+index c50d11abcb9..1269b5dc59f 100644
+--- a/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
++++ b/proxy/src/main/java/net/md_5/bungee/netty/ChannelWrapper.java
+@@ -10,15 +10,10 @@
+ import java.util.Map;
+ import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.TimeUnit;
+-import lombok.EqualsAndHashCode;
+ import lombok.Getter;
+-import lombok.RequiredArgsConstructor;
+ import lombok.Setter;
+ import net.md_5.bungee.compress.PacketCompressor;
+ import net.md_5.bungee.compress.PacketDecompressor;
+-import net.md_5.bungee.connection.DownstreamBridge;
+-import net.md_5.bungee.connection.UpstreamBridge;
+-import net.md_5.bungee.entitymap.EntityMap;
+ import net.md_5.bungee.protocol.DefinedPacket;
+ import net.md_5.bungee.protocol.MinecraftDecoder;
+ import net.md_5.bungee.protocol.MinecraftEncoder;
+@@ -29,7 +24,6 @@
+ public class ChannelWrapper
+ {
+ 
+-    private static final Map<CopiedBuffersCacheKey, boolean[]> COPIED_BUFFERS_CACHE = new ConcurrentHashMap<>();
+     private static final Map<Protocol.ProtocolData, boolean[]> HANDLED_PACKETS_CACHE = new ConcurrentHashMap<>();
+ 
+     private final Channel ch;
+@@ -51,7 +45,6 @@ public ChannelWrapper(ChannelHandlerContext ctx)
+     public void setHandler(PacketHandler handler)
+     {
+         this.handler = handler;
+-        updateCopiedBuffers();
+         updateHandledPackets();
+     }
+ 
+@@ -59,7 +52,6 @@ public void setProtocol(Protocol protocol)
+     {
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocol( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocol( protocol );
+-        updateCopiedBuffers();
+         updateHandledPackets();
+     }
+ 
+@@ -67,22 +59,9 @@ public void setVersion(int protocol)
+     {
+         ch.pipeline().get( MinecraftDecoder.class ).setProtocolVersion( protocol );
+         ch.pipeline().get( MinecraftEncoder.class ).setProtocolVersion( protocol );
+-        updateCopiedBuffers();
+         updateHandledPackets();
+     }
+ 
+-    private void updateCopiedBuffers()
+-    {
+-        MinecraftDecoder decoder = ch.pipeline().get( MinecraftDecoder.class );
+-        if ( handler == null )
+-        {
+-            decoder.setCopiedBuffers( null );
+-        } else
+-        {
+-            decoder.setCopiedBuffers( computeCopiedBuffers( handler, decoder.getProtocol(), decoder.isServer(), decoder.getProtocolVersion() ) );
+-        }
+-    }
+-
+     private void updateHandledPackets()
+     {
+         MinecraftDecoder decoder = ch.pipeline().get( MinecraftDecoder.class );
+@@ -202,37 +181,6 @@ public void setCompressionThreshold(int compressionThreshold)
+         }
+     }
+ 
+-    private static boolean[] computeCopiedBuffers(PacketHandler handler, Protocol protocol, boolean server, int protocolVersion)
+-    {
+-        EntityMap entityMap;
+-        if ( handler instanceof UpstreamBridge )
+-        {
+-            entityMap = ( (UpstreamBridge) handler ).getCon().getEntityRewrite();
+-        } else if ( handler instanceof DownstreamBridge )
+-        {
+-            entityMap = ( (DownstreamBridge) handler ).getCon().getEntityRewrite();
+-        } else
+-        {
+-            return null;
+-        }
+-        CopiedBuffersCacheKey cacheKey = new CopiedBuffersCacheKey( entityMap.getClass(), server );
+-        boolean[] copiedBuffers = COPIED_BUFFERS_CACHE.get( cacheKey );
+-        if ( copiedBuffers == null )
+-        {
+-            copiedBuffers = new boolean[ Protocol.MAX_PACKET_ID ];
+-            for ( int i = 0; i < Protocol.MAX_PACKET_ID; i++ )
+-            {
+-                boolean varintRewritten = server ? entityMap.hasServerboundRewrite( i, true ) : entityMap.hasClientboundRewrite( i, true );
+-                if ( varintRewritten )
+-                {
+-                    copiedBuffers[i] = true;
+-                }
+-            }
+-            COPIED_BUFFERS_CACHE.put( cacheKey, copiedBuffers );
+-        }
+-        return copiedBuffers;
+-    }
+-
+     private static boolean[] computeHandledPackets(Class<? extends PacketHandler> handlerClass, Protocol protocol, boolean server, int protocolVersion)
+     {
+         Protocol.DirectionData protDir = ( server ) ? protocol.TO_SERVER : protocol.TO_CLIENT;
+@@ -263,12 +211,4 @@ private static boolean[] computeHandledPackets(Class<? extends PacketHandler> ha
+         }
+         return handledPackets;
+     }
+-
+-    @RequiredArgsConstructor
+-    @EqualsAndHashCode
+-    private static class CopiedBuffersCacheKey
+-    {
+-        private final Class<? extends EntityMap> entityMapClass;
+-        private final boolean server;
+-    }
+ }
+
+From b18b548761ed1ac1cbcd9650a67cd93926248b96 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 11 Jul 2018 14:59:36 +0200
+Subject: [PATCH 11/11] fixup! Remove conditial buffer slice/copy
+
+---
+ .../net/md_5/bungee/connection/DownstreamBridge.java |  2 --
+ .../net/md_5/bungee/connection/UpstreamBridge.java   |  2 --
+ .../java/net/md_5/bungee/entitymap/EntityMap.java    | 12 ------------
+ 3 files changed, 16 deletions(-)
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+index 29b86492d26..931f3f30d5e 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+@@ -7,7 +7,6 @@
+ import io.netty.buffer.ByteBuf;
+ import io.netty.buffer.ByteBufAllocator;
+ import io.netty.buffer.Unpooled;
+-import lombok.Getter;
+ import lombok.RequiredArgsConstructor;
+ import net.md_5.bungee.ServerConnection;
+ import net.md_5.bungee.api.chat.TextComponent;
+@@ -49,7 +48,6 @@ public class DownstreamBridge extends PacketHandler
+ {
+ 
+     private final ProxyServer bungee;
+-    @Getter
+     private final UserConnection con;
+     private final ServerConnection server;
+ 
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+index ad3bde1ff71..92d22502f61 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+@@ -4,7 +4,6 @@
+ import io.netty.channel.Channel;
+ import java.util.ArrayList;
+ import java.util.List;
+-import lombok.Getter;
+ import net.md_5.bungee.BungeeCord;
+ import net.md_5.bungee.UserConnection;
+ import net.md_5.bungee.Util;
+@@ -32,7 +31,6 @@ public class UpstreamBridge extends PacketHandler
+ {
+ 
+     private final ProxyServer bungee;
+-    @Getter
+     private final UserConnection con;
+ 
+     public UpstreamBridge(ProxyServer bungee, UserConnection con)
+diff --git a/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java b/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java
+index 72958da88a0..847a3ecac7a 100644
+--- a/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java
++++ b/proxy/src/main/java/net/md_5/bungee/entitymap/EntityMap.java
+@@ -71,18 +71,6 @@ protected void addRewrite(int id, ProtocolConstants.Direction direction, boolean
+         }
+     }
+ 
+-    public boolean hasServerboundRewrite(int packetId, boolean varint)
+-    {
+-        boolean[] array = !varint ? serverboundInts : serverboundVarInts;
+-        return packetId >= 0 && packetId < array.length && array[packetId];
+-    }
+-
+-    public boolean hasClientboundRewrite(int packetId, boolean varint)
+-    {
+-        boolean[] array = !varint ? clientboundInts : clientboundVarInts;
+-        return packetId >= 0 && packetId < array.length && array[packetId];
+-    }
+-
+     public void rewriteServerbound(ByteBuf packet, int oldId, int newId)
+     {
+         rewrite( packet, oldId, newId, serverboundInts, serverboundVarInts );

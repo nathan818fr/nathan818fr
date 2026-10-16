@@ -1,0 +1,128 @@
+From eb4067c1df721430014ac770e0df8cd95a0b08de Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 31 Jul 2015 23:52:42 +0200
+Subject: [PATCH 1/4] Fix Validator.register error before lang loading
+
+Fix "Cannot set property X of undefined" when using Validator.register before lang loading.
+---
+ src/lang.js | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/lang.js b/src/lang.js
+index 46076cfd..7e4ece2d 100644
+--- a/src/lang.js
++++ b/src/lang.js
+@@ -24,6 +24,8 @@ var container = {
+ 	 * @return {void}
+ 	 */
+ 	_setRuleMessage: function(lang, attribute, message) {
++		this._load();
++		
+ 		if (message === undefined) {
+ 			message = this.messages[lang].def;
+ 		}
+@@ -68,4 +70,4 @@ var container = {
+ 
+ };
+ 
+-module.exports = container;
+\ No newline at end of file
++module.exports = container;
+
+From 2495d1fea340655f3caf529355ad38984d16126b Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 31 Jul 2015 23:55:42 +0200
+Subject: [PATCH 2/4] fixup! Fix Validator.register error before lang loading
+
+---
+ src/lang.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/lang.js b/src/lang.js
+index 7e4ece2d..2846bbb6 100644
+--- a/src/lang.js
++++ b/src/lang.js
+@@ -24,7 +24,7 @@ var container = {
+ 	 * @return {void}
+ 	 */
+ 	_setRuleMessage: function(lang, attribute, message) {
+-		this._load();
++		this._load(lang);
+ 		
+ 		if (message === undefined) {
+ 			message = this.messages[lang].def;
+
+From b44fff1d9daff52a97bee3c132fa31eb53566cd6 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 1 Aug 2015 00:37:30 +0200
+Subject: [PATCH 3/4] allow registering of implicit rules
+
+---
+ src/rules.js     | 7 ++++++-
+ src/validator.js | 5 +++--
+ 2 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/src/rules.js b/src/rules.js
+index 7f55320a..c9db3dc8 100644
+--- a/src/rules.js
++++ b/src/rules.js
+@@ -359,10 +359,15 @@ var manager = {
+ 	 *
+ 	 * @param  {string}   name
+ 	 * @param  {function} fn
++	 * @param  {boolean}  isImplicit
+ 	 * @return {void}
+ 	 */
+-	register: function(name, fn) {
++	register: function(name, fn, isImplicit) {
+ 		rules[name] = fn;
++		if (isImplicit)
++		{
++			this.implicitRules.push(name);
++		}
+ 	},
+ 
+ 	/**
+diff --git a/src/validator.js b/src/validator.js
+index 212f7341..551a086b 100644
+--- a/src/validator.js
++++ b/src/validator.js
+@@ -338,11 +338,12 @@ Validator.getDefaultLang = function() {
+  * @param  {string}   name
+  * @param  {function} fn
+  * @param  {string}   message
++ * @param  {boolean}  isImplicit
+  * @return {void}
+  */
+-Validator.register = function(name, fn, message) {
++Validator.register = function(name, fn, message, isImplicit) {
+ 	var lang = Validator.getDefaultLang();
+-	Rules.register(name, fn);
++	Rules.register(name, fn, isImplicit);
+ 	Lang._setRuleMessage(lang, name, message);
+ };
+ 
+
+From 708587d150ca0bf80fc05f79b5c24821de24bcce Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 1 Aug 2015 00:40:43 +0200
+Subject: [PATCH 4/4] fixup! allow registering of implicit rules
+
+---
+ src/rules.js | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/src/rules.js b/src/rules.js
+index c9db3dc8..383a5a9f 100644
+--- a/src/rules.js
++++ b/src/rules.js
+@@ -364,8 +364,7 @@ var manager = {
+ 	 */
+ 	register: function(name, fn, isImplicit) {
+ 		rules[name] = fn;
+-		if (isImplicit)
+-		{
++		if (isImplicit) {
+ 			this.implicitRules.push(name);
+ 		}
+ 	},

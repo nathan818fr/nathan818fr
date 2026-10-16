@@ -1,0 +1,30 @@
+From 1131c7016342f13d04ea36bc06c643605ef0705b Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Thu, 26 Oct 2023 11:15:00 +0200
+Subject: [PATCH] Update ulauncher-toggle script to comply with POSIX sh
+
+---
+ bin/ulauncher-toggle | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/bin/ulauncher-toggle b/bin/ulauncher-toggle
+index 6393001c4..1dedd9fa8 100755
+--- a/bin/ulauncher-toggle
++++ b/bin/ulauncher-toggle
+@@ -3,11 +3,12 @@
+ # NOTE: ulauncher-toggle is no longer needed.
+ # It's better to use these two gapplication commands directly.
+ 
+-for ((i=1; i<=$#; i++))
++while [ "$#" -gt 0 ]
+ do
+-  if [ "${!i}" = "--query" ] || [ "${!i}" = "-q" ]; then
+-    let val=i+1
+-    gapplication action io.ulauncher.Ulauncher set-query "'${!val}'"
++  arg="$1"
++  shift
++  if [ "$arg" = "--query" ] || [ "$arg" = "-q" ]; then
++    gapplication action io.ulauncher.Ulauncher set-query "'$1'"
+     exit 0
+   fi
+ done

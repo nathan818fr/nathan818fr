@@ -1,0 +1,56 @@
+From cb53a1c69480e56c8e840b0ebb11836747327cd2 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 21 Jun 2017 03:01:26 +0200
+Subject: [PATCH] Allow service provider configuration
+
+---
+ manifests/init.pp    | 3 ++-
+ manifests/params.pp  | 1 +
+ manifests/service.pp | 1 +
+ 3 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/manifests/init.pp b/manifests/init.pp
+index cd39308..844cf06 100644
+--- a/manifests/init.pp
++++ b/manifests/init.pp
+@@ -26,7 +26,7 @@
+ #
+ # [*concurrent*]
+ #   Number of concurrents jobs
+-#   Defaults to 1 
++#   Defaults to 1
+ #
+ class gitlab_ci_multi_runner (
+   $package_name        = $gitlab_ci_multi_runner::params::package_name,
+@@ -37,6 +37,7 @@
+   $service_stop        = $gitlab_ci_multi_runner::params::service_stop,
+   $service_status      = $gitlab_ci_multi_runner::params::service_status,
+   $service_restart     = $gitlab_ci_multi_runner::params::service_restart,
++  $service_provider    = $gitlab_ci_multi_runner::params::service_provider,
+   $manage_package_repo = $gitlab_ci_multi_runner::params::manage_package_repo,
+   $user                = $gitlab_ci_multi_runner::params::user,
+   $group               = $gitlab_ci_multi_runner::params::group,
+diff --git a/manifests/params.pp b/manifests/params.pp
+index 5a18d34..355f7f7 100644
+--- a/manifests/params.pp
++++ b/manifests/params.pp
+@@ -17,6 +17,7 @@
+   $service_stop        = '/usr/bin/gitlab-ci-multi-runner stop'
+   $service_status      = '/usr/bin/gitlab-ci-multi-runner status'
+   $service_restart     = '/usr/bin/gitlab-ci-multi-runner restart'
++  $service_provider    = undef
+ 
+   case $::osfamily {
+     'Debian': {
+diff --git a/manifests/service.pp b/manifests/service.pp
+index c0d4e95..4d43c9d 100644
+--- a/manifests/service.pp
++++ b/manifests/service.pp
+@@ -14,6 +14,7 @@
+     restart    => $gitlab_ci_multi_runner::service_restart,
+     hasstatus  => true,
+     hasrestart => true,
++    provider   => $gitlab_ci_multi_runner::service_provider,
+   }
+ 
+ }

@@ -1,0 +1,22 @@
+From 0037a9cf5fe7b7614d15b36f95f88cb185773868 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Mon, 27 Sep 2021 16:55:27 +0200
+Subject: [PATCH] Fix custom execution role example
+
+---
+ README.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index bde158b..ec14561 100644
+--- a/README.md
++++ b/README.md
+@@ -104,7 +104,7 @@ Resources:
+       ServiceToken: !ImportValue CustomResourceLambdaEdgeServiceToken
+       Parameters:
+         LambdaSourceArn: !Ref EdgeOriginRequestSource.Version
+-        LambdaRoleArn: !Ref EdgeOriginRequestRole
++        LambdaRoleArn: !GetAtt EdgeOriginRequestRole.Arn
+ 
+   # Custom execution role
+   EdgeOriginRequestRole:

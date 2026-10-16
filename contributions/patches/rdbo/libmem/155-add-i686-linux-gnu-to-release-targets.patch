@@ -1,0 +1,88 @@
+From c80af8d656f4904c7ebae7c900d67359feb6713b Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Thu, 7 Dec 2023 22:09:29 +0100
+Subject: [PATCH] Also release i686-linux-gnu
+
+---
+ .github/workflows/release.yml                 |  2 ++
+ tools/build-release.sh                        |  7 ++++++
+ .../linux-gnu-crossbuild-i686.Dockerfile      | 25 +++++++++++++++++++
+ 3 files changed, 34 insertions(+)
+ create mode 100644 tools/docker-env/linux-gnu-crossbuild-i686.Dockerfile
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index e73c04fc..ffb6c7f9 100644
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -45,6 +45,8 @@ jobs:
+             --arg filter "^${INPUT_TARGETS:-.*}$" \
+             '{include: [.[] | select(.target|test($filter))]}' \
+             <<<'
++              {"target": "i686-linux-gnu-shared", "runs-on": "ubuntu-latest"}
++              {"target": "i686-linux-gnu-static", "runs-on": "ubuntu-latest"}
+               {"target": "x86_64-linux-gnu-shared", "runs-on": "ubuntu-latest"}
+               {"target": "x86_64-linux-gnu-static", "runs-on": "ubuntu-latest"}
+               {"target": "x86_64-linux-musl-shared", "runs-on": "ubuntu-latest"}
+diff --git a/tools/build-release.sh b/tools/build-release.sh
+index 20b8ee51..c274bdba 100755
+--- a/tools/build-release.sh
++++ b/tools/build-release.sh
+@@ -4,6 +4,7 @@ shopt -s inherit_errexit
+ 
+ declare -gr NIX_PLATFORMS=(
+   # Linux (GNU/glibc)
++  i686-linux-gnu
+   x86_64-linux-gnu
+   aarch64-linux-gnu
+   # Linux (Alpine/musl)
+@@ -117,6 +118,11 @@ function _build_in_docker() {
+   *-linux-musl-*) docker_os=linux-musl ;;
+   esac
+   case "$target" in
++  i686-*)
++    # cross-compile i686 from x86_64 (CMake is no longer compiled for i686, etc.)
++    docker_platform=linux/amd64
++    docker_os+='-crossbuild-i686'
++    ;;
+   x86_64-*) docker_platform=linux/amd64 ;;
+   aarch64-*) docker_platform=linux/arm64 ;;
+   esac
+@@ -178,6 +184,7 @@ function do_build() {
+     *)
+       local flags
+       case "$_TARGET" in
++      i686-*) flags='-m32 -march=prescott' ;;
+       x86_64-*) flags='-march=westmere' ;;
+       aarch64-*) flags='-march=armv8-a' ;;
+       esac
+diff --git a/tools/docker-env/linux-gnu-crossbuild-i686.Dockerfile b/tools/docker-env/linux-gnu-crossbuild-i686.Dockerfile
+new file mode 100644
+index 00000000..ffdc16da
+--- /dev/null
++++ b/tools/docker-env/linux-gnu-crossbuild-i686.Dockerfile
+@@ -0,0 +1,25 @@
++FROM debian:buster
++
++# Create Debian Buster (glibc 2.28) image for cross-building i686 linux GNU binaries
++
++RUN dpkg --add-architecture i386 \
++    && apt-get update \
++    && DEBIAN_FRONTEND=noninteractive apt-get install -yqq --no-install-recommends \
++        build-essential \
++        crossbuild-essential-i386 \
++        ca-certificates \
++        python3 \
++        wget \
++    && rm -rf /var/lib/apt/lists/*
++
++RUN wget -O- "https://github.com/Kitware/CMake/releases/download/v3.27.8/cmake-3.27.8-linux-$(uname -m).tar.gz" \
++      | tar -xz --strip-components=1 -C /
++
++RUN groupadd -g 911 build \
++    && useradd -mN -u 911 -g 911 build
++
++COPY --chmod=700 entrypoint.sh /entrypoint.sh
++ENTRYPOINT ["/entrypoint.sh"]
++
++ENV CC="i686-linux-gnu-gcc" \
++    CXX="i686-linux-gnu-g++"

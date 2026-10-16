@@ -1,0 +1,50 @@
+From 861bd991124e5f6f2e491080039e69f4d599a40f Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 7 Jul 2018 18:44:40 +0200
+Subject: [PATCH] Instantiate PluginManager (and so EventBus) after the
+ BungeeCord Logger
+
+---
+ .../src/main/java/net/md_5/bungee/BungeeCord.java | 15 ++++++++-------
+ 1 file changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/BungeeCord.java b/proxy/src/main/java/net/md_5/bungee/BungeeCord.java
+index 5ca4fe8ae52..d0b987361d8 100644
+--- a/proxy/src/main/java/net/md_5/bungee/BungeeCord.java
++++ b/proxy/src/main/java/net/md_5/bungee/BungeeCord.java
+@@ -138,7 +138,7 @@ public class BungeeCord extends ProxyServer
+      * Plugin manager.
+      */
+     @Getter
+-    public final PluginManager pluginManager = new PluginManager( this );
++    public final PluginManager pluginManager;
+     @Getter
+     @Setter
+     private ReconnectHandler reconnectHandler;
+@@ -170,12 +170,6 @@ public class BungeeCord extends ProxyServer
+     
+     {
+         // TODO: Proper fallback when we interface the manager
+-        getPluginManager().registerCommand( null, new CommandReload() );
+-        getPluginManager().registerCommand( null, new CommandEnd() );
+-        getPluginManager().registerCommand( null, new CommandIP() );
+-        getPluginManager().registerCommand( null, new CommandBungee() );
+-        getPluginManager().registerCommand( null, new CommandPerms() );
+-
+         registerChannel( "BungeeCord" );
+     }
+ 
+@@ -220,6 +214,13 @@ public BungeeCord() throws IOException
+         System.setErr( new PrintStream( new LoggingOutputStream( logger, Level.SEVERE ), true ) );
+         System.setOut( new PrintStream( new LoggingOutputStream( logger, Level.INFO ), true ) );
+ 
++        pluginManager = new PluginManager( this );
++        getPluginManager().registerCommand( null, new CommandReload() );
++        getPluginManager().registerCommand( null, new CommandEnd() );
++        getPluginManager().registerCommand( null, new CommandIP() );
++        getPluginManager().registerCommand( null, new CommandBungee() );
++        getPluginManager().registerCommand( null, new CommandPerms() );
++
+         if ( !Boolean.getBoolean( "net.md_5.bungee.native.disable" ) )
+         {
+             if ( EncryptionUtil.nativeFactory.load() )

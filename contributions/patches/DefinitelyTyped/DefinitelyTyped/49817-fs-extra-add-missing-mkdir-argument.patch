@@ -1,0 +1,81 @@
+From 624b15678d399d33723aa04d2b4a229e98aefe8e Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Thu, 26 Nov 2020 20:16:45 +0100
+Subject: [PATCH 1/3] [fs-extra] Add missing mkdir argument
+
+---
+ types/fs-extra/index.d.ts | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/types/fs-extra/index.d.ts b/types/fs-extra/index.d.ts
+index 710b7e8881a81e..4b1f8626bacab6 100644
+--- a/types/fs-extra/index.d.ts
++++ b/types/fs-extra/index.d.ts
+@@ -184,7 +184,7 @@ export function mkdir(path: PathLike, callback: (err: NodeJS.ErrnoException) =>
+  * @param callback No arguments other than a possible exception are given to the completion callback.
+  */
+ export function mkdir(path: PathLike, options: Mode | fs.MakeDirectoryOptions | null, callback: (err: NodeJS.ErrnoException) => void): void;
+-export function mkdir(path: PathLike): Promise<void>;
++export function mkdir(path: PathLike, options?: Mode | fs.MakeDirectoryOptions | null): Promise<void>;
+ 
+ export function open(path: PathLike, flags: string | number, callback: (err: NodeJS.ErrnoException, fd: number) => void): void;
+ export function open(path: PathLike, flags: string | number, mode: Mode, callback: (err: NodeJS.ErrnoException, fd: number) => void): void;
+
+From 390c2bf6587edd584726cb63536688e722d94543 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 28 Nov 2020 22:16:31 +0100
+Subject: [PATCH 2/3] Add mkdirSync definition
+
+---
+ types/fs-extra/index.d.ts | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/types/fs-extra/index.d.ts b/types/fs-extra/index.d.ts
+index 4b1f8626bacab6..2da566c321d101 100644
+--- a/types/fs-extra/index.d.ts
++++ b/types/fs-extra/index.d.ts
+@@ -185,6 +185,7 @@ export function mkdir(path: PathLike, callback: (err: NodeJS.ErrnoException) =>
+  */
+ export function mkdir(path: PathLike, options: Mode | fs.MakeDirectoryOptions | null, callback: (err: NodeJS.ErrnoException) => void): void;
+ export function mkdir(path: PathLike, options?: Mode | fs.MakeDirectoryOptions | null): Promise<void>;
++export function mkdirSync(path: PathLike, options?: Mode | fs.MakeDirectoryOptions | null): void;
+ 
+ export function open(path: PathLike, flags: string | number, callback: (err: NodeJS.ErrnoException, fd: number) => void): void;
+ export function open(path: PathLike, flags: string | number, mode: Mode, callback: (err: NodeJS.ErrnoException, fd: number) => void): void;
+
+From 5d8722237e22ce85e6c62a894afb3784fa28b575 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 28 Nov 2020 22:16:49 +0100
+Subject: [PATCH 3/3] Add tests
+
+---
+ types/fs-extra/fs-extra-tests.ts | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/types/fs-extra/fs-extra-tests.ts b/types/fs-extra/fs-extra-tests.ts
+index aa55598cbc2058..29508c37187140 100644
+--- a/types/fs-extra/fs-extra-tests.ts
++++ b/types/fs-extra/fs-extra-tests.ts
+@@ -73,6 +73,22 @@ fs.createFile(file).then(() => {
+ fs.createFile(file, errorCallback);
+ fs.createFileSync(file);
+ 
++fs.mkdir(dir).then(() => {
++    // stub
++});
++fs.mkdir(dir, errorCallback);
++fs.mkdirSync(dir);
++fs.mkdir(dir, modeNum).then(() => {
++    // stub
++});
++fs.mkdir(dir, modeNum, errorCallback);
++fs.mkdirSync(dir, modeNum);
++fs.mkdir(dir, {mode: modeNum}).then(() => {
++    // stub
++});
++fs.mkdir(dir, {mode: modeNum}, errorCallback);
++fs.mkdirSync(dir, {mode: modeNum});
++
+ fs.mkdirs(dir).then(() => {
+     // stub
+ });

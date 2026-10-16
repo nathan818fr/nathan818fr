@@ -1,0 +1,50 @@
+From fe70eba915cd7f8f79430589becff1e4e7d0858c Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 8 Dec 2023 08:58:53 +0100
+Subject: [PATCH] Also release i686-linux-musl
+
+---
+ .github/workflows/release.yml | 2 ++
+ tools/build-release.sh        | 6 ++++--
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index ffb6c7f9..86262795 100644
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -49,6 +49,8 @@ jobs:
+               {"target": "i686-linux-gnu-static", "runs-on": "ubuntu-latest"}
+               {"target": "x86_64-linux-gnu-shared", "runs-on": "ubuntu-latest"}
+               {"target": "x86_64-linux-gnu-static", "runs-on": "ubuntu-latest"}
++              {"target": "i686-linux-musl-shared", "runs-on": "ubuntu-latest"}
++              {"target": "i686-linux-musl-static", "runs-on": "ubuntu-latest"}
+               {"target": "x86_64-linux-musl-shared", "runs-on": "ubuntu-latest"}
+               {"target": "x86_64-linux-musl-static", "runs-on": "ubuntu-latest"}
+               {"target": "i686-windows-msvc-shared-md", "runs-on": "windows-2019"}
+diff --git a/tools/build-release.sh b/tools/build-release.sh
+index 6ac7f37d..08c41471 100755
+--- a/tools/build-release.sh
++++ b/tools/build-release.sh
+@@ -8,6 +8,7 @@ declare -gr NIX_PLATFORMS=(
+   x86_64-linux-gnu
+   aarch64-linux-gnu
+   # Linux (Alpine/musl)
++  i686-linux-musl
+   x86_64-linux-musl
+   aarch64-linux-musl
+ )
+@@ -118,11 +119,12 @@ function _build_in_docker() {
+   *-linux-musl-*) docker_os=linux-musl ;;
+   esac
+   case "$target" in
+-  i686-*)
+-    # cross-compile i686 from x86_64 (CMake is no longer compiled for i686, etc.)
++  i686-linux-gnu-*)
++    # cross-compile i686 from x86_64 (CMake is no longer compiled for i686 and we can't rely on the old distro package)
+     docker_platform=linux/amd64
+     docker_os+='-crossbuild-i686'
+     ;;
++  i686-*) docker_platform=linux/386 ;;
+   x86_64-*) docker_platform=linux/amd64 ;;
+   aarch64-*) docker_platform=linux/arm64 ;;
+   esac

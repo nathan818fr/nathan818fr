@@ -1,0 +1,284 @@
+From eac20c5a79e616afad838ade3a86739549ce88ac Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 6 Jun 2020 13:41:08 +0200
+Subject: [PATCH] Support debian 10 (buster)
+
+---
+ CHANGES.md                | 11 +++++++++++
+ qml/AboutPopup.qml        |  2 +-
+ qml/CredentialCard.qml    |  4 ++--
+ qml/CredentialsView.qml   |  2 +-
+ qml/EntriesModel.qml      |  2 +-
+ qml/NewCredentialView.qml |  3 ++-
+ qml/NoYubiKeySection.qml  |  8 ++++----
+ qml/SettingsView.qml      |  2 +-
+ qml/StyledTextField.qml   |  4 ++--
+ qml/StyledToolBar.qml     |  4 ++--
+ qml/SystemTray.qml        |  9 +++++----
+ qml/YubiKey.qml           |  8 ++++----
+ qml/main.qml              |  6 +++---
+ 13 files changed, 39 insertions(+), 26 deletions(-)
+ create mode 100644 CHANGES.md
+
+diff --git a/CHANGES.md b/CHANGES.md
+new file mode 100644
+index 000000000..c6d7e7def
+--- /dev/null
++++ b/CHANGES.md
+@@ -0,0 +1,11 @@
++# Debian Buster Support
++
++- Downgrade Qt (5.12 -> 5.11)
++  - Don't set the `TextField.placeholderTextColor` property
++  - Replace the `SystemTrayIcon.icon.source` property by `SystemTrayIcon.iconSource`
++  - Don't set the `SystemTrayIcon.icon.mask` property
++- Downgrade QtQml (2.12 -> 2.11)
++  - Replace lambdas by functions :'(
++  - Set default arguments values manually
++  - Replace `Array.includes(valueToFind)` by `Arrays.indexOf(valueToFind) !== -1`
++- Downgrade Qt.labs.platform (1.1 -> 1.0)
+diff --git a/qml/AboutPopup.qml b/qml/AboutPopup.qml
+index a32348294..a91d42575 100644
+--- a/qml/AboutPopup.qml
++++ b/qml/AboutPopup.qml
+@@ -35,7 +35,7 @@ Dialog {
+         if (!!yubiKey.currentDevice) {
+             return yubiKey.currentDevice.usbInterfacesEnabled.join('+')
+         } else if (yubiKey.availableDevices.length > 0
+-                   && !yubiKey.availableDevices.some(dev => dev.selectable)) {
++                   && !yubiKey.availableDevices.some(function(dev) { return dev.selectable })) {
+             return qsTr("No compatible device found")
+         } else {
+             return qsTr("No device found")
+diff --git a/qml/CredentialCard.qml b/qml/CredentialCard.qml
+index 04be67377..ea014af67 100644
+--- a/qml/CredentialCard.qml
++++ b/qml/CredentialCard.qml
+@@ -25,14 +25,14 @@ Pane {
+ 
+     property bool touchCredential: !!credential && credential && credential.touch
+ 
+-    property bool favorite: !!credential ? settings.favorites.includes(credential.key) : false
++    property bool favorite: !!credential ? (settings.favorites.indexOf(credential.key) !== -1) : false
+ 
+     Layout.fillHeight: true
+     Layout.fillWidth: true
+ 
+     function toggleFavorite() {
+         if (favorite) {
+-            settings.favorites = settings.favorites.filter(fav => fav !== credential.key)
++            settings.favorites = settings.favorites.filter(function(fav) { return fav !== credential.key })
+         } else {
+             let favs = settings.favorites
+             favs.push(credential.key)
+diff --git a/qml/CredentialsView.qml b/qml/CredentialsView.qml
+index 4619195c3..73f732dff 100644
+--- a/qml/CredentialsView.qml
++++ b/qml/CredentialsView.qml
+@@ -59,7 +59,7 @@ Pane {
+     NoYubiKeySection {
+         id: noYubiKeySection
+         // Make this section the default view to show when there is errors.
+-        visible: !yubiKey.availableDevices.some(dev => dev.selectable) || (!credentialsSection.visible && !noResultsSection.visible && !noCredentialsSection.visible)
++        visible: !yubiKey.availableDevices.some(function(dev) { return dev.selectable }) || (!credentialsSection.visible && !noResultsSection.visible && !noCredentialsSection.visible)
+         enabled: visible
+         Accessible.ignored: true
+     }
+diff --git a/qml/EntriesModel.qml b/qml/EntriesModel.qml
+index 5f8b3f35c..964afbd03 100644
+--- a/qml/EntriesModel.qml
++++ b/qml/EntriesModel.qml
+@@ -9,7 +9,7 @@ SortedListModel {
+     function compareFunction(a, b) {
+ 
+         function getSortableName(credential) {
+-            return (settings.favorites.includes(credential.key) ? "0" : "1") + (credential.issuer
++            return (settings.favorites.indexOf(credential.key) !== -1 ? "0" : "1") + (credential.issuer
+                     || '') + (credential.name
+                               || '') + '/' + (credential.period || '')
+         }
+diff --git a/qml/NewCredentialView.qml b/qml/NewCredentialView.qml
+index 67259d142..0c70fe234 100644
+--- a/qml/NewCredentialView.qml
++++ b/qml/NewCredentialView.qml
+@@ -46,7 +46,8 @@ Flickable {
+         addCredential(true)
+     }
+ 
+-    function addCredential(copy = false) {
++    function addCredential(copy) {
++        if (copy === undefined) copy = false;
+ 
+         function callback(resp) {
+             if (resp.success) {
+diff --git a/qml/NoYubiKeySection.qml b/qml/NoYubiKeySection.qml
+index e6128bc00..9ee98c11e 100644
+--- a/qml/NoYubiKeySection.qml
++++ b/qml/NoYubiKeySection.qml
+@@ -28,7 +28,7 @@ ColumnLayout {
+ 
+         Label {
+             text: {
+-                if (yubiKey.availableDevices.length > 0 && !yubiKey.availableDevices.some(dev => dev.selectable)) {
++                if (yubiKey.availableDevices.length > 0 && !yubiKey.availableDevices.some(function(dev) { return dev.selectable })) {
+                     return qsTr("Unsupported device")
+                 }
+                 else {
+@@ -44,14 +44,14 @@ ColumnLayout {
+         }
+         Label {
+             text: {
+-                if (yubiKey.availableDevices.length > 0 && !yubiKey.availableDevices.some(dev => dev.selectable)) {
++                if (yubiKey.availableDevices.length > 0 && !yubiKey.availableDevices.some(function(dev) { return dev.selectable })) {
+                     return qsTr("Yubico Authenticator requires a CCID/OTP enabled and compatible YubiKey.")
+                 }
+                 else {
+                     return ""
+                 }
+             }
+-            visible: (yubiKey.availableDevices.length > 0 && !yubiKey.availableDevices.some(dev => dev.selectable))
++            visible: (yubiKey.availableDevices.length > 0 && !yubiKey.availableDevices.some(function(dev) { return dev.selectable }))
+             Layout.minimumWidth: 300
+             Layout.maximumWidth: app.width - dynamicMargin
+                                  < dynamicWidth ? app.width - dynamicMargin : dynamicWidth
+@@ -90,7 +90,7 @@ ColumnLayout {
+         }
+         Label {
+             text: {
+-                var t = yubiKey.availableReaders.filter(reader => reader.toLowerCase().includes(settings.customReaderName.toLowerCase())).toString()
++                var t = yubiKey.availableReaders.filter(function(reader) { return reader.toLowerCase().indexOf(settings.customReaderName.toLowerCase()) !== -1 }).toString()
+                 if (t.length === 0)
+                     t = qsTr("Custom reader not found!")
+                 return t
+diff --git a/qml/SettingsView.qml b/qml/SettingsView.qml
+index 871921301..63db0ed37 100644
+--- a/qml/SettingsView.qml
++++ b/qml/SettingsView.qml
+@@ -35,7 +35,7 @@ Flickable {
+         if (!!device) {
+             return qsTr("Serial number: %1").arg(!!device.serial ? device.serial : "Not available")
+         } else if (yubiKey.availableDevices.length > 0
+-                   && !yubiKey.availableDevices.some(dev => dev.selectable)) {
++                   && !yubiKey.availableDevices.some(function(dev) { return dev.selectable })) {
+             return qsTr("No compatible device found")
+         } else {
+             return qsTr("No device found")
+diff --git a/qml/StyledTextField.qml b/qml/StyledTextField.qml
+index f241b2d7e..b94ca5da0 100644
+--- a/qml/StyledTextField.qml
++++ b/qml/StyledTextField.qml
+@@ -3,7 +3,7 @@ import QtQuick.Controls 2.2
+ import QtQuick.Layouts 1.3
+ import QtQuick.Controls.Material 2.2
+ import QtGraphicalEffects 1.0
+-import Qt.labs.platform 1.1
++import Qt.labs.platform 1.0
+ 
+ Item {
+ 
+@@ -102,7 +102,7 @@ Item {
+                     return required ? labelText + " *" : labelText
+                 }
+             }
+-            placeholderTextColor: formPlaceholderText
++            // placeholderTextColor: formPlaceholderText
+ 
+             MouseArea {
+                 anchors.fill: parent
+diff --git a/qml/StyledToolBar.qml b/qml/StyledToolBar.qml
+index c19d09efa..ef24dbcf7 100644
+--- a/qml/StyledToolBar.qml
++++ b/qml/StyledToolBar.qml
+@@ -3,7 +3,7 @@ import QtQuick.Controls 2.2
+ import QtQuick.Layouts 1.3
+ import QtQuick.Controls.Material 2.2
+ import QtGraphicalEffects 1.0
+-import Qt.labs.platform 1.1 as PopUpMenu
++import Qt.labs.platform 1.0 as PopUpMenu
+ 
+ ToolBar {
+     id: toolBar
+@@ -148,7 +148,7 @@ ToolBar {
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+                 placeholderText: qsTr("Quick find")
+-                placeholderTextColor: isDark() ? "#B7B7B7" : "#767676"
++                // placeholderTextColor: isDark() ? "#B7B7B7" : "#767676"
+                 leftPadding: 28
+                 rightPadding: 8
+                 width: parent.width
+diff --git a/qml/SystemTray.qml b/qml/SystemTray.qml
+index 5c8c33d0e..d3ae3e138 100644
+--- a/qml/SystemTray.qml
++++ b/qml/SystemTray.qml
+@@ -1,11 +1,12 @@
+ import QtQuick 2.9
+-import Qt.labs.platform 1.1
+-import QtQml 2.12
++import Qt.labs.platform 1.0
++import QtQml 2.11
+ 
+ SystemTrayIcon {
+     visible: settings.closeToTray
+-    icon.source: Qt.platform.os == "osx" ? "../images/menubaricon.png" : "../images/windowicon.png"
+-    icon.mask: Qt.platform.os == "osx"
++    // icon.source: Qt.platform.os == "osx" ? "../images/menubaricon.png" : "../images/windowicon.png"
++    // icon.mask: Qt.platform.os == "osx"
++    iconSource: Qt.platform.os == "osx" ? "../images/menubaricon.png" : "../images/windowicon.png"
+     onActivated: {
+         if (reason === SystemTrayIcon.DoubleClick) {
+             showWindow()
+diff --git a/qml/YubiKey.qml b/qml/YubiKey.qml
+index d0d0b0a5f..52b8dd4e8 100644
+--- a/qml/YubiKey.qml
++++ b/qml/YubiKey.qml
+@@ -243,12 +243,12 @@ Python {
+             if (resp.success) {
+                 availableDevices = resp.devices
+                 // no current device, or current device is no longer available, pick a new one
+-                if (!currentDevice || !availableDevices.some(dev => dev.serial === currentDevice.serial)) {
++                if (!currentDevice || !availableDevices.some(function(dev) { return dev.serial === currentDevice.serial })) {
+                     // new device is being loaded, clear any old device
+                     clearCurrentDeviceAndEntries()
+-                    if (availableDevices.some(dev => dev.selectable)) {
++                    if (availableDevices.some(function(dev) { return dev.selectable })) {
+                         // pick the first selectable device
+-                        currentDevice = resp.devices.find(dev => dev.selectable)
++                        currentDevice = resp.devices.find(function(dev) { return dev.selectable })
+                         calculateAll(navigator.goToCredentialsIfNotInSettings)
+                     } else {
+                         // no selectable device (will land in no Insert YubiKey view)
+@@ -256,7 +256,7 @@ Python {
+                     }
+                 } else {
+                     // the same one but potentially updated
+-                    currentDevice = resp.devices.find(dev => dev.serial === currentDevice.serial)
++                    currentDevice = resp.devices.find(function(dev) { return dev.serial === currentDevice.serial })
+                 }
+             } else {
+                 console.log("refreshing devices failed:", resp.error_id)
+diff --git a/qml/main.qml b/qml/main.qml
+index 015a9d81c..db25947e2 100644
+--- a/qml/main.qml
++++ b/qml/main.qml
+@@ -3,9 +3,9 @@ import QtQuick.Controls 2.2
+ import QtQuick.Layouts 1.3
+ import QtQuick.Controls.Material 2.2
+ import Qt.labs.settings 1.0
+-import Qt.labs.platform 1.1
++import Qt.labs.platform 1.0
+ import QtQuick.Window 2.2
+-import QtQml 2.12
++import QtQml 2.11
+ 
+ ApplicationWindow {
+ 
+@@ -216,7 +216,7 @@ ApplicationWindow {
+         })
+         for (var i = 0; i < entries.count; i++) {
+             var entry = entries.get(i)
+-            if (!!entry.credential && settings.favorites.includes(entry.credential.key)) {
++            if (!!entry.credential && settings.favorites.indexOf(entry.credential.key) !== -1) {
+                 favs.append(entry)
+             }
+         }

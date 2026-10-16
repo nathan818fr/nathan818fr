@@ -1,0 +1,196 @@
+From 1076c9ab204d39657cbfae4d56a6d64d3a4621be Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 25 Oct 2019 02:08:37 +0200
+Subject: [PATCH 1/2] :sparkles: Add config to enable/disable scope prompt
+
+---
+ src/config.js    | 8 +++++++-
+ src/constants.js | 4 +++-
+ src/gitmoji.js   | 2 ++
+ src/prompts.js   | 9 +++++++--
+ 4 files changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/src/config.js b/src/config.js
+index 450b94b22..18d2c1e58 100644
+--- a/src/config.js
++++ b/src/config.js
+@@ -6,6 +6,7 @@ const config = new Conf()
+ const getAutoAdd = () => config.get(constants.AUTO_ADD)
+ const getEmojiFormat = () => config.get(constants.EMOJI_FORMAT)
+ const getSignedCommit = () => config.get(constants.SIGNED_COMMIT)
++const getScopePrompt = () => config.get(constants.SCOPE_PROMPT)
+ const setAutoAdd = (autoAdd) => config.set(constants.AUTO_ADD, autoAdd)
+ const setEmojiFormat = (emojiFormat) => {
+   config.set(constants.EMOJI_FORMAT, emojiFormat)
+@@ -13,12 +14,17 @@ const setEmojiFormat = (emojiFormat) => {
+ const setSignedCommit = (signedCommit) => {
+   config.set(constants.SIGNED_COMMIT, signedCommit)
+ }
++const setScopePrompt = (scopePrompt) => {
++  config.set(constants.SCOPE_PROMPT, scopePrompt)
++}
+ 
+ module.exports = {
+   getAutoAdd,
+   getEmojiFormat,
+   getSignedCommit,
++  getScopePrompt,
+   setAutoAdd,
+   setEmojiFormat,
+-  setSignedCommit
++  setSignedCommit,
++  setScopePrompt
+ }
+diff --git a/src/constants.js b/src/constants.js
+index 314bc00a9..a01e1a19f 100644
+--- a/src/constants.js
++++ b/src/constants.js
+@@ -8,6 +8,7 @@ const HOOK_PATH = '/hooks/prepare-commit-msg'
+ const HOOK_PERMISSIONS = 0o775
+ const SIGNED_COMMIT = 'signedCommit'
+ const TITLE_MAX_LENGTH_COUNT = 48
++const SCOPE_PROMPT = 'scopePrompt'
+ 
+ module.exports = {
+   AUTO_ADD,
+@@ -18,5 +19,6 @@ module.exports = {
+   HOOK_PATH,
+   HOOK_PERMISSIONS,
+   SIGNED_COMMIT,
+-  TITLE_MAX_LENGTH_COUNT
++  TITLE_MAX_LENGTH_COUNT,
++  SCOPE_PROMPT
+ }
+diff --git a/src/gitmoji.js b/src/gitmoji.js
+index cc78f064f..e1834bd52 100644
+--- a/src/gitmoji.js
++++ b/src/gitmoji.js
+@@ -21,6 +21,7 @@ class GitmojiCli {
+     if (config.getAutoAdd() === undefined) config.setAutoAdd(false)
+     if (!config.getEmojiFormat()) config.setEmojiFormat(constants.CODE)
+     if (config.getSignedCommit() === undefined) config.setSignedCommit(false)
++    if (config.getScopePrompt() === undefined) config.setScopePrompt(false)
+   }
+ 
+   config () {
+@@ -28,6 +29,7 @@ class GitmojiCli {
+       config.setAutoAdd(answers[constants.AUTO_ADD])
+       config.setEmojiFormat(answers[constants.EMOJI_FORMAT])
+       config.setSignedCommit(answers[constants.SIGNED_COMMIT])
++      config.setScopePrompt(answers[constants.SCOPE_PROMPT])
+     })
+   }
+ 
+diff --git a/src/prompts.js b/src/prompts.js
+index ce797241b..cf544e695 100644
+--- a/src/prompts.js
++++ b/src/prompts.js
+@@ -21,6 +21,11 @@ const config = [
+     name: constants.SIGNED_COMMIT,
+     message: 'Enable signed commits',
+     type: 'confirm'
++  },
++  {
++    name: constants.SCOPE_PROMPT,
++    message: 'Enable scope prompt',
++    type: 'confirm'
+   }
+ ]
+ 
+@@ -43,11 +48,11 @@ const gitmoji = (gitmojis) => {
+         )
+       }
+     },
+-    {
++    ...(configVault.getScopePrompt() !== true ? [] : [{
+       name: 'scope',
+       message: 'Enter the scope of current changes',
+       validate: guard.scope
+-    },
++    }]),
+     {
+       name: 'title',
+       message: 'Enter the commit title',
+
+From d29f686ba73f14c92a5278621614f59f342d0e1a Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 25 Oct 2019 02:12:06 +0200
+Subject: [PATCH 2/2] :white_check_mark: Add scope prompt config tests
+
+---
+ test/__snapshots__/gitmojiCli.spec.js.snap | 15 ++++++++++-----
+ test/gitmojiCli.spec.js                    |  5 +++++
+ 2 files changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/test/__snapshots__/gitmojiCli.spec.js.snap b/test/__snapshots__/gitmojiCli.spec.js.snap
+index 9a206f9ef..269fcc66f 100644
+--- a/test/__snapshots__/gitmojiCli.spec.js.snap
++++ b/test/__snapshots__/gitmojiCli.spec.js.snap
+@@ -4,15 +4,19 @@ exports[`config module should match for setAutoAdd and getAutoAdd 1`] = `false`;
+ 
+ exports[`config module should match for setEmojiFormat and getEmojiFormat 1`] = `"code"`;
+ 
++exports[`config module should match for setScopePrompt and getScopePrompt 1`] = `false`;
++
+ exports[`config module should match for setSignedCommit and getSignedCommit 1`] = `false`;
+ 
+ exports[`config module should match the exported methods 1`] = `
+ Object {
+   "getAutoAdd": [Function],
+   "getEmojiFormat": [Function],
++  "getScopePrompt": [Function],
+   "getSignedCommit": [Function],
+   "setAutoAdd": [Function],
+   "setEmojiFormat": [Function],
++  "setScopePrompt": [Function],
+   "setSignedCommit": [Function],
+ }
+ `;
+@@ -30,6 +34,7 @@ gitmoji --hook $1
+   "HOOK_MODE": "hook",
+   "HOOK_PATH": "/hooks/prepare-commit-msg",
+   "HOOK_PERMISSIONS": 509,
++  "SCOPE_PROMPT": "scopePrompt",
+   "SIGNED_COMMIT": "signedCommit",
+   "TITLE_MAX_LENGTH_COUNT": 48,
+ }
+@@ -85,6 +90,11 @@ Array [
+     "name": "signedCommit",
+     "type": "confirm",
+   },
++  Object {
++    "message": "Enable scope prompt",
++    "name": "scopePrompt",
++    "type": "confirm",
++  },
+ ]
+ `;
+ 
+@@ -96,11 +106,6 @@ Array [
+     "source": [Function],
+     "type": "autocomplete",
+   },
+-  Object {
+-    "message": "Enter the scope of current changes",
+-    "name": "scope",
+-    "validate": [Function],
+-  },
+   Object {
+     "message": "Enter the commit title",
+     "name": "title",
+diff --git a/test/gitmojiCli.spec.js b/test/gitmojiCli.spec.js
+index f5aaa8756..a27c49d66 100644
+--- a/test/gitmojiCli.spec.js
++++ b/test/gitmojiCli.spec.js
+@@ -61,6 +61,11 @@ describe('config module', () => {
+     config.setSignedCommit(false)
+     expect(config.getSignedCommit()).toMatchSnapshot()
+   })
++
++  it('should match for setScopePrompt and getScopePrompt', () => {
++    config.setScopePrompt(false)
++    expect(config.getScopePrompt()).toMatchSnapshot()
++  })
+ })
+ 
+ describe('gitmoji module', () => {

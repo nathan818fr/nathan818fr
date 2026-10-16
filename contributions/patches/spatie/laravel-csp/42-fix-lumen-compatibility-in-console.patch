@@ -1,0 +1,22 @@
+From b0925ca75fcad5eaa68296970f406fadde120238 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 4 Aug 2018 13:47:59 +0200
+Subject: [PATCH] Check if config_path function exists
+
+---
+ src/CspServiceProvider.php | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/CspServiceProvider.php b/src/CspServiceProvider.php
+index 5e1a244..fbee389 100644
+--- a/src/CspServiceProvider.php
++++ b/src/CspServiceProvider.php
+@@ -10,7 +10,7 @@ class CspServiceProvider extends ServiceProvider
+ {
+     public function boot()
+     {
+-        if ($this->app->runningInConsole()) {
++        if ($this->app->runningInConsole() && function_exists('config_path')) {
+             $this->publishes([
+                 __DIR__.'/../config/csp.php' => config_path('csp.php'),
+             ], 'config');

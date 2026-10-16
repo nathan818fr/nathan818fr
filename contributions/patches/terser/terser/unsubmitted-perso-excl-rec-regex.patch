@@ -1,0 +1,89 @@
+From b37a7f3d1d3add2cecf83f88dec3db0567986987 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 1 Aug 2018 19:48:16 +0200
+Subject: [PATCH] Add excludeRecursiveRegex option
+
+---
+ lib/propmangle.js | 29 ++++++++++++++++++++++++-----
+ 1 file changed, 24 insertions(+), 5 deletions(-)
+
+diff --git a/lib/propmangle.js b/lib/propmangle.js
+index d9dbb8c79..0fd0308e0 100644
+--- a/lib/propmangle.js
++++ b/lib/propmangle.js
+@@ -124,6 +124,7 @@ function mangle_properties(ast, options) {
+         only_cache: false,
+         regex: null,
+         reserved: null,
++        excludeRecursiveRegex: null,
+     }, true);
+ 
+     var reserved = options.reserved;
+@@ -142,6 +143,7 @@ function mangle_properties(ast, options) {
+     }
+ 
+     var regex = options.regex;
++    var excludeRecursiveRegex = options.excludeRecursiveRegex;
+ 
+     // note debug is either false (disabled), or a string of the debug suffix to use (enabled).
+     // note debug may be enabled as an empty string, which is falsey. Also treat passing 'true'
+@@ -179,14 +181,14 @@ function mangle_properties(ast, options) {
+     // step 2: transform the tree, renaming properties
+     return ast.transform(new TreeTransformer(function(node) {
+         if (node instanceof AST_ObjectKeyVal) {
+-            node.key = mangle(node.key);
++            node.key = mangle(node.key, node);
+         }
+         else if (node instanceof AST_ObjectProperty) {
+             // setter or getter
+-            node.key.name = mangle(node.key.name);
++            node.key.name = mangle(node.key.name, node);
+         }
+         else if (node instanceof AST_Dot) {
+-            node.property = mangle(node.property);
++            node.property = mangle(node.property, node);
+         }
+         else if (!options.keep_quoted && node instanceof AST_Sub) {
+             node.property = mangleStrings(node.property);
+@@ -199,6 +201,20 @@ function mangle_properties(ast, options) {
+ 
+     // only function declarations after this line
+ 
++    function can_mangle_expression(name, node) {
++        if (!excludeRecursiveRegex) {
++            return true;
++        }
++        var e = node;
++        while ((e = e.expression)) {
++            var property = e.property || e.name;
++            if (property && excludeRecursiveRegex.test(property)) {
++                return false;
++            }
++        }
++        return true;
++    }
++
+     function can_mangle(name) {
+         if (unmangleable.indexOf(name) >= 0) return false;
+         if (reserved.indexOf(name) >= 0) return false;
+@@ -225,7 +241,10 @@ function mangle_properties(ast, options) {
+         }
+     }
+ 
+-    function mangle(name) {
++    function mangle(name, node) {
++        if (!can_mangle_expression(name, node)) {
++            return name;
++        }
+         if (!should_mangle(name)) {
+             return name;
+         }
+@@ -260,7 +279,7 @@ function mangle_properties(ast, options) {
+                 node.expressions[last] = mangleStrings(node.expressions[last]);
+             }
+             else if (node instanceof AST_String) {
+-                node.value = mangle(node.value);
++                node.value = mangle(node.value, node);
+             }
+             else if (node instanceof AST_Conditional) {
+                 node.consequent = mangleStrings(node.consequent);

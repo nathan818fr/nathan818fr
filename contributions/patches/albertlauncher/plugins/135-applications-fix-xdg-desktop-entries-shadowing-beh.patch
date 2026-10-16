@@ -1,0 +1,219 @@
+From 24823b0e80627ca071c02ddaa1f5528f06f360f1 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 2 Oct 2024 17:23:38 +0200
+Subject: [PATCH] Fix XDG desktop entries shadowing behavior
+
+---
+ applications/src/xdg/application.cpp        | 22 +++++++----
+ applications/src/xdg/application.h          | 11 ++++++
+ applications/src/xdg/desktopentryparser.cpp | 19 +++++-----
+ applications/src/xdg/plugin.cpp             | 42 ++++++++++++++++-----
+ 4 files changed, 66 insertions(+), 28 deletions(-)
+
+diff --git a/applications/src/xdg/application.cpp b/applications/src/xdg/application.cpp
+index 090f7738..ad8eedf8 100644
+--- a/applications/src/xdg/application.cpp
++++ b/applications/src/xdg/application.cpp
+@@ -24,10 +24,10 @@ Application::Application(const QString &id, const QString &path, ParseOptions po
+     // NoDisplay - boolean, must not be true
+     try {
+         if (p.getBoolean(root_section, QStringLiteral("NoDisplay")))
+-            throw runtime_error("Desktop entry excluded by 'NoDisplay'.");
++            exclude_reason_ = ExcludeReason::NoDisplay;
+     } catch (const out_of_range &) { }
+ 
+-    if (!po.ignore_show_in_keys)
++    if (!po.ignore_show_in_keys && exclude_reason_ == ExcludeReason::None)
+     {
+         const auto desktops(QString(getenv("XDG_CURRENT_DESKTOP")).split(':', Qt::SkipEmptyParts));
+ 
+@@ -35,14 +35,14 @@ Application::Application(const QString &id, const QString &path, ParseOptions po
+         try {
+             if (ranges::any_of(p.getString(root_section, QStringLiteral("NotShowIn")).split(';', Qt::SkipEmptyParts),
+                                [&](const auto &de){ return desktops.contains(de); }))
+-                throw runtime_error("Desktop entry excluded by 'NotShowIn'.");
++                exclude_reason_ = ExcludeReason::NotShowIn;
+         } catch (const out_of_range &) { }
+ 
+         // OnlyShowIn - string(s), if exists has to be in XDG_CURRENT_DESKTOP
+         try {
+             if (!ranges::any_of(p.getString(root_section, QStringLiteral("OnlyShowIn")).split(';', Qt::SkipEmptyParts),
+                                 [&](const auto &de){ return desktops.contains(de); }))
+-                throw runtime_error("Desktop entry excluded by 'OnlyShowIn'.");
++                exclude_reason_ = ExcludeReason::OnlyShowIn;
+         } catch (const out_of_range &) { }
+     }
+ 
+@@ -54,19 +54,20 @@ Application::Application(const QString &id, const QString &path, ParseOptions po
+     if (po.use_non_localized_name)
+         names_ << p.getString(root_section, QStringLiteral("Name"));
+ 
+-    // Exec - string, REQUIRED despite not strictly by standard
++    // Exec - string
+     try
+     {
+         exec_ = DesktopEntryParser::splitExec(p.getString(root_section, QStringLiteral("Exec"))).value();
+-        if (exec_.isEmpty())
+-            throw runtime_error("Empty Exec value.");
+     }
++    catch (const out_of_range &) { }
+     catch (const bad_optional_access&)
+     {
+         throw runtime_error("Malformed Exec value.");
+     }
++    if (exec_.isEmpty() && exclude_reason_ == ExcludeReason::None)
++        exclude_reason_ = ExcludeReason::EmptyExec;
+ 
+-    if (po.use_exec)
++    if (po.use_exec && !exec_.isEmpty())
+     {
+         static QStringList excludes = {
+             "/",
+@@ -197,6 +198,11 @@ vector<Action> Application::actions() const
+     return actions;
+ }
+ 
++const Application::ExcludeReason &Application::excludeReason() const
++{
++    return exclude_reason_;
++}
++
+ const QStringList &Application::exec() const
+ {
+     return exec_;
+diff --git a/applications/src/xdg/application.h b/applications/src/xdg/application.h
+index 097bb411..9637a5e0 100644
+--- a/applications/src/xdg/application.h
++++ b/applications/src/xdg/application.h
+@@ -19,6 +19,15 @@ class Application : public ApplicationBase
+         bool use_non_localized_name;
+     };
+ 
++    enum class ExcludeReason
++    {
++        None,
++        NoDisplay,
++        NotShowIn,
++        OnlyShowIn,
++        EmptyExec,
++    };
++
+     Application(const QString &id, const QString &path, ParseOptions po);
+     Application(const Application &) = default;
+ 
+@@ -28,6 +37,7 @@ class Application : public ApplicationBase
+     std::vector<albert::Action> actions() const override final;
+ 
+     const QStringList &exec() const;
++    const ExcludeReason &excludeReason() const;
+ 
+ protected:
+ 
+@@ -51,5 +61,6 @@ class Application : public ApplicationBase
+     QString working_dir_;
+     std::vector<DesktopAction> desktop_actions_;
+     bool term_ = false;
++    ExcludeReason exclude_reason_ = ExcludeReason::None;
+ 
+ };
+diff --git a/applications/src/xdg/desktopentryparser.cpp b/applications/src/xdg/desktopentryparser.cpp
+index bbe04c24..ff324efa 100644
+--- a/applications/src/xdg/desktopentryparser.cpp
++++ b/applications/src/xdg/desktopentryparser.cpp
+@@ -38,18 +38,17 @@ QString DesktopEntryParser::getRawValue(const QString &section, const QString &k
+     class SectionDoesNotExist : public std::out_of_range { using out_of_range::out_of_range; };
+     class KeyDoesNotExist : public std::out_of_range { using out_of_range::out_of_range; };
+ 
+-    try {
+-        auto &s = data.at(section);
+-        try {
+-            return s.at(key);
+-        } catch (const out_of_range&) {
+-            throw KeyDoesNotExist(QString("Section '%1' does not contain a key '%2'.")
+-                                  .arg(section, key).toStdString());
+-        }
+-    } catch (const out_of_range&) {
++    auto s = data.find(section);
++    if (s == data.end())
+         throw SectionDoesNotExist(QString("Desktop entry does not contain a section '%1'.")
+                                   .arg(section).toStdString());
+-    }
++
++    auto v = s->second.find(key);
++    if (v == s->second.end())
++        throw KeyDoesNotExist(QString("Section '%1' does not contain a key '%2'.")
++                              .arg(section, key).toStdString());
++
++    return v->second;
+ }
+ 
+ QString DesktopEntryParser::getEscapedValue(const QString &section, const QString &key) const
+diff --git a/applications/src/xdg/plugin.cpp b/applications/src/xdg/plugin.cpp
+index 840256b9..4ca3b2ea 100644
+--- a/applications/src/xdg/plugin.cpp
++++ b/applications/src/xdg/plugin.cpp
+@@ -116,7 +116,8 @@ Plugin::Plugin()
+         };
+ 
+         // Get a map of unique desktop entries according to the spec
+-        map<QString, shared_ptr<applications::Application>> apps;  // Desktop id > path
++        map<QString, QString> known_apps;  // Desktop id > path
++        vector<shared_ptr<applications::Application>> apps;
+         for (const QString &dir : appDirectories())
+         {
+             DEBG << "Scanning desktop entries in:" << dir;
+@@ -137,24 +138,45 @@ Plugin::Plugin()
+                 static const QRegularExpression re("^.*applications/");
+                 const auto id = fIt.filePath().remove(re).replace("/","-").chopped(8).toLower();  // '.desktop'
+ 
++                if (auto known_app = known_apps.find(id); known_app != known_apps.end())
++                {
++                    DEBG << QString("Skipped '%1': Shadowed by '%2'").arg(path, known_app->second);
++                    continue;
++                }
++
+                 try
+                 {
+-                    if (const auto &[it, success] = apps.emplace(id, make_shared<Application>(id, path, po));
+-                            success)
+-                        DEBG << QString("Valid desktop file '%1': '%2'").arg(path, it->second->name());
+-                    else
+-                        DEBG << QString("Skipped %1: Shadowed by '%2'").arg(path, it->second->path());
++                    const auto app = make_shared<Application>(id, path, po);
++                    known_apps[id] = path;
++
++                    switch (app->excludeReason())
++                    {
++                    case Application::ExcludeReason::None:
++                        apps.push_back(app);
++                        DEBG << QString("Valid desktop file '%1': '%2'").arg(path, app->name());
++                        break;
++                    case Application::ExcludeReason::NoDisplay:
++                        DEBG << QString("Skipped '%1': Desktop entry excluded by 'NoDisplay'.").arg(path);
++                        break;
++                    case Application::ExcludeReason::NotShowIn:
++                        DEBG << QString("Skipped '%1': Desktop entry excluded by 'NotShowIn'.").arg(path);
++                        break;
++                    case Application::ExcludeReason::OnlyShowIn:
++                        DEBG << QString("Skipped '%1': Desktop entry excluded by 'OnlyShowIn'.").arg(path);
++                        break;
++                    case Application::ExcludeReason::EmptyExec:
++                        DEBG << QString("Skipped '%1': Empty Exec value.").arg(path);
++                        break;
++                    }
+                 }
+                 catch (const exception &e)
+                 {
+-                    DEBG << QString("Skipped %1: %2").arg(path, e.what());
++                    DEBG << QString("Invalid desktop file '%1': %2").arg(path, e.what());
+                 }
+             }
+         }
+ 
+-        vector<shared_ptr<applications::Application>> ret;
+-        ranges::move(apps | ranges::views::values, back_inserter(ret));
+-        return ret;
++        return apps;
+     };
+ 
+     indexer.finish = [this](vector<shared_ptr<applications::Application>> &&result)

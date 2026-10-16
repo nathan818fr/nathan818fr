@@ -1,0 +1,303 @@
+From f91413bcb5c66f013ffb8b7612c1c04929965c4d Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 28 Sep 2019 14:37:36 +0200
+Subject: [PATCH 1/5] Use redis.expire for touch
+
+This is a more correct way to only update ttl.
+And this will also reduce sessions concurrency interference.
+---
+ lib/connect-redis.js | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/lib/connect-redis.js b/lib/connect-redis.js
+index 854dbb52..3f80aedf 100644
+--- a/lib/connect-redis.js
++++ b/lib/connect-redis.js
+@@ -61,9 +61,11 @@ module.exports = function(session) {
+     touch(sid, sess, cb = noop) {
+       if (this.disableTouch) return cb()
+ 
+-      // Since we need to update the expires value on the cookie,
+-      // we update the whole session object.
+-      this.set(sid, sess, cb)
++      let key = this.prefix + sid
++      this.client.expire(key, this._getTTL(sess), (err) => {
++        if (err) return cb(err)
++        return cb(null, 'OK')
++      })
+     }
+ 
+     destroy(sid, cb = noop) {
+
+From 33278e9d2d4c0e4961253d672878555f58f95555 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 28 Sep 2019 15:03:36 +0200
+Subject: [PATCH 2/5] Make sure that touch never fail
+
+---
+ lib/connect-redis.js | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/lib/connect-redis.js b/lib/connect-redis.js
+index 3f80aedf..e77eb109 100644
+--- a/lib/connect-redis.js
++++ b/lib/connect-redis.js
+@@ -62,9 +62,10 @@ module.exports = function(session) {
+       if (this.disableTouch) return cb()
+ 
+       let key = this.prefix + sid
+-      this.client.expire(key, this._getTTL(sess), (err) => {
++      this.client.expire(key, this._getTTL(sess), (err, ret) => {
+         if (err) return cb(err)
+-        return cb(null, 'OK')
++        if (ret === 1) return cb(null, 'OK')
++        this.set(sid, sess, cb) // fallback to setex if the key has expired
+       })
+     }
+ 
+
+From 2d38f4cad540a40906c55889bf31506d43862821 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Tue, 1 Oct 2019 12:54:14 +0200
+Subject: [PATCH 3/5] Use redis.eval to touch
+
+This nearly replicate the original memory-store behavior (except that only expires is updated, not the entire cookie).
+It will limit concurrency issues and preserve the expires behavior!
+---
+ lib/connect-redis.js | 43 ++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 38 insertions(+), 5 deletions(-)
+
+diff --git a/lib/connect-redis.js b/lib/connect-redis.js
+index e77eb109..16232fc3 100644
+--- a/lib/connect-redis.js
++++ b/lib/connect-redis.js
+@@ -3,6 +3,34 @@
+  * Copyright(c) 2012 TJ Holowaychuk <tj@vision-media.ca>
+  * MIT Licensed
+  */
++const crypto = require('crypto')
++
++const touchScript = `
++local sess = redis.call("get", KEYS[1])
++if (sess == false) then return 0; end
++sess = cjson.decode(sess)
++if (ARGV[2] == '') then
++ if (sess.cookie ~= nil and sess.cookie.expires ~= nil) then
++   sess.cookie.expires = nil
++   redis.call("setex", KEYS[1], ARGV[1], cjson.encode(sess))
++ else
++   redis.call("expire", KEYS[1], ARGV[1])
++ end
++else
++ if (sess.cookie == nil) then sess.cookie = {} end
++ sess.cookie.expires = ARGV[2]
++ redis.call("setex", KEYS[1], ARGV[1], cjson.encode(sess))
++end
++return 1
++`;
++const touchScriptSha = crypto.createHash('sha1').update(touchScript, 'utf8').digest('hex')
++
++const redisEval = (client, script, scriptSha, args, cb) => {
++  client.evalsha.apply(client, [scriptSha, ...args, (err, ret) => {
++    if (err && err.code === 'NOSCRIPT') return client.eval.apply(client, [script, ...args, cb])
++    cb(err, ret)
++  }]);
++}
+ 
+ module.exports = function(session) {
+   const Store = session.Store
+@@ -62,11 +90,16 @@ module.exports = function(session) {
+       if (this.disableTouch) return cb()
+ 
+       let key = this.prefix + sid
+-      this.client.expire(key, this._getTTL(sess), (err, ret) => {
+-        if (err) return cb(err)
+-        if (ret === 1) return cb(null, 'OK')
+-        this.set(sid, sess, cb) // fallback to setex if the key has expired
+-      })
++      let expires = (sess && sess.cookie && sess.cookie.expires) || ''
++      if (this.client.eval) {
++        redisEval(this.client, touchScript, touchScriptSha, [1, key, this._getTTL(sess), expires], (err, ret) => {
++          if (err) return cb(err);
++          if (ret !== 1) return cb(null, 'EXPIRED');
++          cb(null, 'OK');
++        });
++      } else {
++        this.set(sid, sess, cb)
++      }
+     }
+ 
+     destroy(sid, cb = noop) {
+
+From 13b78938fbdff4e65696dd32ce6dcb0ebd19ed5c Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Tue, 1 Oct 2019 13:01:43 +0200
+Subject: [PATCH 4/5] lint
+
+---
+ lib/connect-redis.js | 36 +++++++++++++++++++++++++-----------
+ 1 file changed, 25 insertions(+), 11 deletions(-)
+
+diff --git a/lib/connect-redis.js b/lib/connect-redis.js
+index 16232fc3..cd68f04c 100644
+--- a/lib/connect-redis.js
++++ b/lib/connect-redis.js
+@@ -22,14 +22,22 @@ else
+  redis.call("setex", KEYS[1], ARGV[1], cjson.encode(sess))
+ end
+ return 1
+-`;
+-const touchScriptSha = crypto.createHash('sha1').update(touchScript, 'utf8').digest('hex')
++`
++const touchScriptSha = crypto
++  .createHash('sha1')
++  .update(touchScript, 'utf8')
++  .digest('hex')
+ 
+ const redisEval = (client, script, scriptSha, args, cb) => {
+-  client.evalsha.apply(client, [scriptSha, ...args, (err, ret) => {
+-    if (err && err.code === 'NOSCRIPT') return client.eval.apply(client, [script, ...args, cb])
+-    cb(err, ret)
+-  }]);
++  client.evalsha.apply(client, [
++    scriptSha,
++    ...args,
++    (err, ret) => {
++      if (err && err.code === 'NOSCRIPT')
++        return client.eval.apply(client, [script, ...args, cb])
++      cb(err, ret)
++    },
++  ])
+ }
+ 
+ module.exports = function(session) {
+@@ -92,11 +100,17 @@ module.exports = function(session) {
+       let key = this.prefix + sid
+       let expires = (sess && sess.cookie && sess.cookie.expires) || ''
+       if (this.client.eval) {
+-        redisEval(this.client, touchScript, touchScriptSha, [1, key, this._getTTL(sess), expires], (err, ret) => {
+-          if (err) return cb(err);
+-          if (ret !== 1) return cb(null, 'EXPIRED');
+-          cb(null, 'OK');
+-        });
++        redisEval(
++          this.client,
++          touchScript,
++          touchScriptSha,
++          [1, key, this._getTTL(sess), expires],
++          (err, ret) => {
++            if (err) return cb(err)
++            if (ret !== 1) return cb(null, 'EXPIRED')
++            cb(null, 'OK')
++          }
++        )
+       } else {
+         this.set(sid, sess, cb)
+       }
+
+From b01d8ec60dcc8db69896666f086d672eb0621220 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Tue, 1 Oct 2019 15:45:24 +0200
+Subject: [PATCH 5/5] Revert touch to v3 behavior
+
+---
+ lib/connect-redis.js       | 57 ++++----------------------------------
+ test/connect-redis-test.js |  7 +++--
+ 2 files changed, 9 insertions(+), 55 deletions(-)
+
+diff --git a/lib/connect-redis.js b/lib/connect-redis.js
+index cd68f04c..79b26f78 100644
+--- a/lib/connect-redis.js
++++ b/lib/connect-redis.js
+@@ -3,42 +3,6 @@
+  * Copyright(c) 2012 TJ Holowaychuk <tj@vision-media.ca>
+  * MIT Licensed
+  */
+-const crypto = require('crypto')
+-
+-const touchScript = `
+-local sess = redis.call("get", KEYS[1])
+-if (sess == false) then return 0; end
+-sess = cjson.decode(sess)
+-if (ARGV[2] == '') then
+- if (sess.cookie ~= nil and sess.cookie.expires ~= nil) then
+-   sess.cookie.expires = nil
+-   redis.call("setex", KEYS[1], ARGV[1], cjson.encode(sess))
+- else
+-   redis.call("expire", KEYS[1], ARGV[1])
+- end
+-else
+- if (sess.cookie == nil) then sess.cookie = {} end
+- sess.cookie.expires = ARGV[2]
+- redis.call("setex", KEYS[1], ARGV[1], cjson.encode(sess))
+-end
+-return 1
+-`
+-const touchScriptSha = crypto
+-  .createHash('sha1')
+-  .update(touchScript, 'utf8')
+-  .digest('hex')
+-
+-const redisEval = (client, script, scriptSha, args, cb) => {
+-  client.evalsha.apply(client, [
+-    scriptSha,
+-    ...args,
+-    (err, ret) => {
+-      if (err && err.code === 'NOSCRIPT')
+-        return client.eval.apply(client, [script, ...args, cb])
+-      cb(err, ret)
+-    },
+-  ])
+-}
+ 
+ module.exports = function(session) {
+   const Store = session.Store
+@@ -98,22 +62,11 @@ module.exports = function(session) {
+       if (this.disableTouch) return cb()
+ 
+       let key = this.prefix + sid
+-      let expires = (sess && sess.cookie && sess.cookie.expires) || ''
+-      if (this.client.eval) {
+-        redisEval(
+-          this.client,
+-          touchScript,
+-          touchScriptSha,
+-          [1, key, this._getTTL(sess), expires],
+-          (err, ret) => {
+-            if (err) return cb(err)
+-            if (ret !== 1) return cb(null, 'EXPIRED')
+-            cb(null, 'OK')
+-          }
+-        )
+-      } else {
+-        this.set(sid, sess, cb)
+-      }
++      this.client.expire(key, this._getTTL(sess), (err, ret) => {
++        if (err) return cb(err)
++        if (ret !== 1) return cb(null, 'EXPIRED')
++        cb(null, 'OK')
++      })
+     }
+ 
+     destroy(sid, cb = noop) {
+diff --git a/test/connect-redis-test.js b/test/connect-redis-test.js
+index 7d21f4f9..53912ab2 100644
+--- a/test/connect-redis-test.js
++++ b/test/connect-redis-test.js
+@@ -73,12 +73,13 @@ async function lifecycleTest(store, t) {
+   t.ok(res <= 60, 'check expires ttl')
+ 
+   ttl = 90
+-  expires = new Date(Date.now() + ttl * 1000).toISOString()
+-  res = await p(store, 'touch')('456', { cookie: { expires } })
++  let newExpires = new Date(Date.now() + ttl * 1000).toISOString()
++  // note: cookie.expires will not be updated on redis (see https://github.com/tj/connect-redis/pull/285)
++  res = await p(store, 'touch')('456', { cookie: { expires: newExpires } })
+   t.equal(res, 'OK', 'set cookie expires touch')
+ 
+   res = await p(store.client, 'ttl')('sess:456')
+-  t.ok(res >= 60, 'check expires ttl touch')
++  t.ok(res > 60, 'check expires ttl touch')
+ 
+   res = await p(store, 'length')()
+   t.equal(res, 2, 'stored two keys length')

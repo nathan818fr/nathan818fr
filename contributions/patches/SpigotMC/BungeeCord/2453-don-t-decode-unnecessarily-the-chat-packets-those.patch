@@ -1,0 +1,26 @@
+From 57098e84669d8ceab364e95a72028ea41a668652 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sun, 8 Jul 2018 22:37:45 +0200
+Subject: [PATCH] Don't decode chat packet to the client direction
+
+---
+ .../src/main/java/net/md_5/bungee/protocol/Protocol.java    | 6 ------
+ 1 file changed, 6 deletions(-)
+
+diff --git a/protocol/src/main/java/net/md_5/bungee/protocol/Protocol.java b/protocol/src/main/java/net/md_5/bungee/protocol/Protocol.java
+index cd065631cb3..2c5d288d2e3 100644
+--- a/protocol/src/main/java/net/md_5/bungee/protocol/Protocol.java
++++ b/protocol/src/main/java/net/md_5/bungee/protocol/Protocol.java
+@@ -69,12 +69,6 @@ public enum Protocol
+                     map( ProtocolConstants.MINECRAFT_1_9, 0x23 ),
+                     map( ProtocolConstants.MINECRAFT_1_12, 0x23 )
+             );
+-            TO_CLIENT.registerPacket(
+-                    Chat.class,
+-                    map( ProtocolConstants.MINECRAFT_1_8, 0x02 ),
+-                    map( ProtocolConstants.MINECRAFT_1_9, 0x0F ),
+-                    map( ProtocolConstants.MINECRAFT_1_12, 0x0F )
+-            );
+             TO_CLIENT.registerPacket(
+                     Respawn.class,
+                     map( ProtocolConstants.MINECRAFT_1_8, 0x07 ),

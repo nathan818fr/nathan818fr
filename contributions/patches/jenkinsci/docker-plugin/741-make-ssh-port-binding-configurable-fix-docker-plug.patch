@@ -1,0 +1,148 @@
+From 57a2ff74c39d9b81a9dc1589c01470498ccdf262 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 5 Jul 2019 23:36:42 +0200
+Subject: [PATCH] Add sshBindHostname option
+
+---
+ .../jenkins/plugins/docker/DockerCloud.java    |  4 ++--
+ .../io/jenkins/docker/client/DockerAPI.java    | 18 ++++++++++++++++--
+ .../connector/DockerComputerSSHConnector.java  |  7 ++++++-
+ .../docker/client/DockerAPI/config.jelly       |  4 ++++
+ .../client/DockerAPI/help-sshBindHostname.html |  4 ++++
+ 5 files changed, 32 insertions(+), 5 deletions(-)
+ create mode 100644 src/main/resources/io/jenkins/docker/client/DockerAPI/help-sshBindHostname.html
+
+diff --git a/src/main/java/com/nirima/jenkins/plugins/docker/DockerCloud.java b/src/main/java/com/nirima/jenkins/plugins/docker/DockerCloud.java
+index 381581be3..721df7f31 100644
+--- a/src/main/java/com/nirima/jenkins/plugins/docker/DockerCloud.java
++++ b/src/main/java/com/nirima/jenkins/plugins/docker/DockerCloud.java
+@@ -138,7 +138,7 @@ public DockerCloud(String name,
+                        int readTimeout,
+                        String version,
+                        String dockerHostname) {
+-        this(name, new DockerAPI(dockerHost, connectTimeout, readTimeout, version, dockerHostname), templates);
++        this(name, new DockerAPI(dockerHost, connectTimeout, readTimeout, version, dockerHostname, null), templates);
+         setContainerCap(containerCap);
+     }
+ 
+@@ -682,7 +682,7 @@ public Object readResolve() {
+             dockerHost = new DockerServerEndpoint(serverUrl, credentialsId);
+         }
+         if (dockerApi == null) {
+-            dockerApi = new DockerAPI(dockerHost, connectTimeout, readTimeout, version, dockerHostname);
++            dockerApi = new DockerAPI(dockerHost, connectTimeout, readTimeout, version, dockerHostname, null);
+         }
+ 
+         return this;
+diff --git a/src/main/java/io/jenkins/docker/client/DockerAPI.java b/src/main/java/io/jenkins/docker/client/DockerAPI.java
+index aedffea5a..c9b5b87c7 100644
+--- a/src/main/java/io/jenkins/docker/client/DockerAPI.java
++++ b/src/main/java/io/jenkins/docker/client/DockerAPI.java
+@@ -63,6 +63,8 @@ public class DockerAPI extends AbstractDescribableImpl<DockerAPI> implements Ser
+ 
+     private String hostname;
+ 
++    private String sshBindHostname;
++
+     /**
+      * Is this host actually a swarm?
+      */
+@@ -73,12 +75,13 @@ public DockerAPI(DockerServerEndpoint dockerHost) {
+         this.dockerHost = dockerHost;
+     }
+ 
+-    public DockerAPI(DockerServerEndpoint dockerHost, int connectTimeout, int readTimeout, String apiVersion, String hostname) {
++    public DockerAPI(DockerServerEndpoint dockerHost, int connectTimeout, int readTimeout, String apiVersion, String hostname, String sshBindHostname) {
+         this.dockerHost = dockerHost;
+         this.connectTimeout = connectTimeout;
+         this.readTimeout = readTimeout;
+         this.apiVersion = apiVersion;
+         this.hostname = hostname;
++        this.sshBindHostname = sshBindHostname;
+     }
+ 
+     public DockerServerEndpoint getDockerHost() {
+@@ -121,6 +124,15 @@ public void setHostname(String hostname) {
+         this.hostname = trimToNull(hostname);
+     }
+ 
++    public String getSshBindHostname() {
++        return sshBindHostname;
++    }
++
++    @DataBoundSetter
++    public void setSshBindHostname(String sshBindHostname) {
++        this.sshBindHostname = trimToNull(sshBindHostname);
++    }
++
+     public boolean isSwarm() {
+         if (_isSwarm == null) {
+             try(final DockerClient client = getClient()) {
+@@ -302,6 +314,7 @@ public boolean equals(Object o) {
+         if (dockerHost != null ? !dockerHost.equals(dockerAPI.dockerHost) : dockerAPI.dockerHost != null) return false;
+         if (apiVersion != null ? !apiVersion.equals(dockerAPI.apiVersion) : dockerAPI.apiVersion != null) return false;
+         if (hostname != null ? !hostname.equals(dockerAPI.hostname) : dockerAPI.hostname != null) return false;
++        if (sshBindHostname != null ? !sshBindHostname.equals(dockerAPI.sshBindHostname) : dockerAPI.sshBindHostname != null) return false;
+         return true;
+     }
+ 
+@@ -312,6 +325,7 @@ public int hashCode() {
+         result = 31 * result + readTimeout;
+         result = 31 * result + (apiVersion != null ? apiVersion.hashCode() : 0);
+         result = 31 * result + (hostname != null ? hostname.hashCode() : 0);
++        result = 31 * result + (sshBindHostname != null ? sshBindHostname.hashCode() : 0);
+         return result;
+     }
+ 
+@@ -345,7 +359,7 @@ public FormValidation doTestConnection(
+         ) {
+             try {
+                 final DockerServerEndpoint dsep = new DockerServerEndpoint(uri, credentialsId);
+-                final DockerAPI dapi = new DockerAPI(dsep, connectTimeout, readTimeout, apiVersion, null);
++                final DockerAPI dapi = new DockerAPI(dsep, connectTimeout, readTimeout, apiVersion, null, null);
+                 try(final DockerClient dc = dapi.getClient()) {
+                     final VersionCmd vc = dc.versionCmd();
+                     final Version v = vc.exec();
+diff --git a/src/main/java/io/jenkins/docker/connector/DockerComputerSSHConnector.java b/src/main/java/io/jenkins/docker/connector/DockerComputerSSHConnector.java
+index 7b832a695..47d9d8360 100644
+--- a/src/main/java/io/jenkins/docker/connector/DockerComputerSSHConnector.java
++++ b/src/main/java/io/jenkins/docker/connector/DockerComputerSSHConnector.java
+@@ -183,7 +183,12 @@ public void beforeContainerCreated(DockerAPI api, String workdir, CreateContaine
+         }
+ 
+         cmd.withPortSpecs(port+"/tcp");
+-        final PortBinding sshPortBinding = PortBinding.parse(":" + port);
++        final PortBinding sshPortBinding;
++        if (api.getSshBindHostname() != null) {
++            sshPortBinding = PortBinding.parse(api.getSshBindHostname() + "::" + port);
++        } else {
++            sshPortBinding = PortBinding.parse(":" + port);
++        }
+         final Ports portBindings = cmd.getPortBindings();
+         if(portBindings != null) {
+             portBindings.add(sshPortBinding);
+diff --git a/src/main/resources/io/jenkins/docker/client/DockerAPI/config.jelly b/src/main/resources/io/jenkins/docker/client/DockerAPI/config.jelly
+index 7b5af295b..1cb10c972 100644
+--- a/src/main/resources/io/jenkins/docker/client/DockerAPI/config.jelly
++++ b/src/main/resources/io/jenkins/docker/client/DockerAPI/config.jelly
+@@ -19,6 +19,10 @@
+         <f:entry title="${%Docker Hostname or IP address}" field="hostname">
+             <f:textbox/>
+         </f:entry>
++
++        <f:entry title="${%Hostname to bind SSH}" field="sshBindHostname">
++            <f:textbox/>
++        </f:entry>
+     </f:advanced>
+ 
+     <!-- we can't pass dockerhost here, need to "flatmap" it's attributes -->
+diff --git a/src/main/resources/io/jenkins/docker/client/DockerAPI/help-sshBindHostname.html b/src/main/resources/io/jenkins/docker/client/DockerAPI/help-sshBindHostname.html
+new file mode 100644
+index 000000000..690f74e2c
+--- /dev/null
++++ b/src/main/resources/io/jenkins/docker/client/DockerAPI/help-sshBindHostname.html
+@@ -0,0 +1,4 @@
++<div>
++  An Hostname (or IP) to bind the SSH port of containers.
++  If not specified "0.0.0.0" is used.
++</div>

@@ -1,0 +1,40 @@
+From e8a26e87f6a822db10eb4d66cb62222eefab5708 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sat, 16 Dec 2017 17:02:58 +0100
+Subject: [PATCH] Update depends
+
+---
+ pom.xml | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/pom.xml b/pom.xml
+index d9eefaf..1f93c20 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -10,7 +10,7 @@
+ 
+     <groupId>net.md-5</groupId>
+     <artifactId>specialsource-maven-plugin</artifactId>
+-    <version>1.2.1</version>
++    <version>1.3-SNAPSHOT</version>
+     <packaging>maven-plugin</packaging>
+     <name>SpecialSourceMP</name>
+ 
+@@ -26,7 +26,7 @@
+ 
+     <properties>
+         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+-        <mavenPluginVersion>3.1</mavenPluginVersion>
++        <mavenPluginVersion>3.5</mavenPluginVersion>
+         <mavenVersion>3.0</mavenVersion>
+     </properties>
+ 
+@@ -34,7 +34,7 @@
+         <dependency>
+             <groupId>net.md-5</groupId>
+             <artifactId>SpecialSource</artifactId>
+-            <version>1.7.2</version>
++            <version>1.8.1</version>
+             <type>jar</type>
+             <scope>compile</scope>
+         </dependency>

@@ -1,0 +1,152 @@
+From 6f3d350de2deb008750f1de0d301188aaad39a94 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 4 Jul 2018 17:22:32 +0200
+Subject: [PATCH 1/2] Fix: prompt also displayed in non-git directories (with
+ git 2.18+)
+
+---
+ gitstatus.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gitstatus.py b/gitstatus.py
+index d944fd4e..28bdad49 100755
+--- a/gitstatus.py
++++ b/gitstatus.py
+@@ -12,7 +12,7 @@
+ 
+ error_string = error.decode('utf-8')
+ 
+-if 'fatal: Not a git repository' in error_string:
++if 'fatal: not a git repository' in error_string.lower():
+ 	sys.exit(0)
+ 
+ branch = branch.decode("utf-8").strip()[11:]
+
+From 6ace462181a07b7ac7995992d29665afe8d5d7ec Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Mon, 8 Jul 2019 14:58:00 +0200
+Subject: [PATCH 2/2] Refactor gitstatus.py
+
+---
+ gitstatus.py | 101 +++++++++++++++++++++++++--------------------------
+ 1 file changed, 49 insertions(+), 52 deletions(-)
+ mode change 100755 => 100644 gitstatus.py
+
+diff --git a/gitstatus.py b/gitstatus.py
+old mode 100755
+new mode 100644
+index 28bdad49..560f79ba
+--- a/gitstatus.py
++++ b/gitstatus.py
+@@ -4,62 +4,59 @@
+ # change this symbol to whatever you prefer
+ prehash = ':'
+ 
+-from subprocess import Popen, PIPE
+-
+ import sys
+-gitsym = Popen(['git', 'symbolic-ref', 'HEAD'], stdout=PIPE, stderr=PIPE)
+-branch, error = gitsym.communicate()
+-
+-error_string = error.decode('utf-8')
+-
+-if 'fatal: not a git repository' in error_string.lower():
+-	sys.exit(0)
+-
+-branch = branch.decode("utf-8").strip()[11:]
+-
+-res, err = Popen(['git','diff','--name-status'], stdout=PIPE, stderr=PIPE).communicate()
+-err_string = err.decode('utf-8')
+-if 'fatal' in err_string:
+-	sys.exit(0)
+-changed_files = [namestat[0] for namestat in res.decode("utf-8").splitlines()]
+-staged_files = [namestat[0] for namestat in Popen(['git','diff', '--staged','--name-status'], stdout=PIPE).communicate()[0].splitlines()]
+-nb_changed = len(changed_files) - changed_files.count('U')
+-nb_U = staged_files.count('U')
+-nb_staged = len(staged_files) - nb_U
+-staged = str(nb_staged)
+-conflicts = str(nb_U)
+-changed = str(nb_changed)
+-nb_untracked = len([0 for status in Popen(['git','status','--porcelain',],stdout=PIPE).communicate()[0].decode("utf-8").splitlines() if status.startswith('??')])
+-untracked = str(nb_untracked)
++from subprocess import Popen, PIPE
+ 
+-ahead, behind = 0,0
+ 
+-if not branch: # not on any branch
+-	branch = prehash + Popen(['git','rev-parse','--short','HEAD'], stdout=PIPE).communicate()[0].decode("utf-8")[:-1]
+-else:
+-	remote_name = Popen(['git','config','branch.%s.remote' % branch], stdout=PIPE).communicate()[0].decode("utf-8").strip()
+-	if remote_name:
+-		merge_name = Popen(['git','config','branch.%s.merge' % branch], stdout=PIPE).communicate()[0].decode("utf-8").strip()
+-		if remote_name == '.': # local
+-			remote_ref = merge_name
+-		else:
+-			remote_ref = 'refs/remotes/%s/%s' % (remote_name, merge_name[11:])
+-		revgit = Popen(['git', 'rev-list', '--left-right', '%s...HEAD' % remote_ref],stdout=PIPE, stderr=PIPE)
+-		revlist = revgit.communicate()[0]
+-		if revgit.poll(): # fallback to local
+-			revlist = Popen(['git', 'rev-list', '--left-right', '%s...HEAD' % merge_name],stdout=PIPE, stderr=PIPE).communicate()[0]
+-		behead = revlist.decode("utf-8").splitlines()
+-		ahead = len([x for x in behead if x[0]=='>'])
+-		behind = len(behead) - ahead
++# `git status --porcelain -b` can collect all information
++# branch, remote_branch, untracked, staged, changed, conflicts, ahead, behind
++po = Popen(['git', 'status', '--porcelain', '-b', '-uno'], stdout=PIPE, stderr=PIPE)
++stdout, sterr = po.communicate()
++if po.returncode != 0:
++    sys.exit(0)  # Not a git repository
++
++# collect git status information
++untracked, staged, changed, conflicts = [], [], [], []
++ahead, behind = 0, 0
++status = [(line[0], line[1], line[2:]) for line in stdout.splitlines()]
++for st in status:
++    if st[0] == '#' and st[1] == '#':
++        st2 = st[2].replace('No commits yet on ', '').strip()
++        if len(st2.split('...')) == 1:
++            branch = st2
++        else:
++            # current and remote branch info
++            branch, rest = st2.split('...')
++            if len(rest.split(' ')) == 1:
++                # remote_branch = rest.split(' ')[0]
++                pass
++            else:
++                # ahead or behind
++                divergence = ' '.join(rest.split(' ')[1:])
++                divergence = divergence.lstrip('[').rstrip(']')
++                for div in divergence.split(', '):
++                    if 'ahead' in div:
++                        ahead = int(div[len('ahead '):].strip())
++                    elif 'behind' in div:
++                        behind = int(div[len('behind '):].strip())
++    elif st[0] == '?' and st[1] == '?':
++        untracked.append(st)
++    else:
++        if st[1] == 'M':
++            changed.append(st)
++        if st[0] == 'U':
++            conflicts.append(st)
++        elif st[0] != ' ':
++            staged.append(st)
+ 
+ out = ' '.join([
+-	branch,
+-	str(ahead),
+-	str(behind),
+-	staged,
+-	conflicts,
+-	changed,
+-	untracked,
+-	])
++    branch,
++    str(ahead),
++    str(behind),
++    str(len(staged)),
++    str(len(conflicts)),
++    str(len(changed)),
++    str(len(untracked)),
++])
+ print(out, end='')
+ 

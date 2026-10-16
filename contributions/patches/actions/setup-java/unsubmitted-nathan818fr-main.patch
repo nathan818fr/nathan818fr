@@ -1,0 +1,396 @@
+From c8ff0ba5a0ca73dcbb0af98b129e0f47a0277074 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 17 Nov 2021 18:36:51 +0100
+Subject: [PATCH 1/3] Add server-id-list
+
+---
+ __tests__/auth.test.ts | 37 ++++++++++++++++++++++++++-----------
+ action.yml             |  6 +++++-
+ src/auth.ts            | 33 +++++++++++++++++++++------------
+ src/constants.ts       |  1 +
+ 4 files changed, 53 insertions(+), 24 deletions(-)
+
+diff --git a/__tests__/auth.test.ts b/__tests__/auth.test.ts
+index c5d2ffc32..3fc3dcd05 100644
+--- a/__tests__/auth.test.ts
++++ b/__tests__/auth.test.ts
+@@ -42,7 +42,7 @@ describe('auth tests', () => {
+     const altSettingsFile = path.join(altHome, MVN_SETTINGS_FILE);
+     await io.rmRF(altHome); // ensure it doesn't already exist
+ 
+-    await auth.createAuthenticationSettings(id, username, password, altHome, true);
++    await auth.createAuthenticationSettings([id], username, password, altHome, true);
+ 
+     expect(fs.existsSync(m2Dir)).toBe(false);
+     expect(fs.existsSync(settingsFile)).toBe(false);
+@@ -50,7 +50,7 @@ describe('auth tests', () => {
+     expect(fs.existsSync(altHome)).toBe(true);
+     expect(fs.existsSync(altSettingsFile)).toBe(true);
+     expect(fs.readFileSync(altSettingsFile, 'utf-8')).toEqual(
+-      auth.generate(id, username, password)
++      auth.generate([id], username, password)
+     );
+ 
+     await io.rmRF(altHome);
+@@ -61,11 +61,26 @@ describe('auth tests', () => {
+     const username = 'UNAME';
+     const password = 'TOKEN';
+ 
+-    await auth.createAuthenticationSettings(id, username, password, m2Dir, true);
++    await auth.createAuthenticationSettings([id], username, password, m2Dir, true);
+ 
+     expect(fs.existsSync(m2Dir)).toBe(true);
+     expect(fs.existsSync(settingsFile)).toBe(true);
+-    expect(fs.readFileSync(settingsFile, 'utf-8')).toEqual(auth.generate(id, username, password));
++    expect(fs.readFileSync(settingsFile, 'utf-8')).toEqual(auth.generate([id], username, password));
++  }, 100000);
++
++  it('creates settings.xml with minimal configuration and multiple servers', async () => {
++    const id1 = 'packages-1';
++    const id2 = 'packages-2';
++    const username = 'UNAME';
++    const password = 'TOKEN';
++
++    await auth.createAuthenticationSettings([id1, id2], username, password, m2Dir, true);
++
++    expect(fs.existsSync(m2Dir)).toBe(true);
++    expect(fs.existsSync(settingsFile)).toBe(true);
++    expect(fs.readFileSync(settingsFile, 'utf-8')).toEqual(
++      auth.generate([id1, id2], username, password)
++    );
+   }, 100000);
+ 
+   it('creates settings.xml with additional configuration', async () => {
+@@ -74,12 +89,12 @@ describe('auth tests', () => {
+     const password = 'TOKEN';
+     const gpgPassphrase = 'GPG';
+ 
+-    await auth.createAuthenticationSettings(id, username, password, m2Dir, true, gpgPassphrase);
++    await auth.createAuthenticationSettings([id], username, password, m2Dir, true, gpgPassphrase);
+ 
+     expect(fs.existsSync(m2Dir)).toBe(true);
+     expect(fs.existsSync(settingsFile)).toBe(true);
+     expect(fs.readFileSync(settingsFile, 'utf-8')).toEqual(
+-      auth.generate(id, username, password, gpgPassphrase)
++      auth.generate([id], username, password, gpgPassphrase)
+     );
+   }, 100000);
+ 
+@@ -93,11 +108,11 @@ describe('auth tests', () => {
+     expect(fs.existsSync(m2Dir)).toBe(true);
+     expect(fs.existsSync(settingsFile)).toBe(true);
+ 
+-    await auth.createAuthenticationSettings(id, username, password, m2Dir, true);
++    await auth.createAuthenticationSettings([id], username, password, m2Dir, true);
+ 
+     expect(fs.existsSync(m2Dir)).toBe(true);
+     expect(fs.existsSync(settingsFile)).toBe(true);
+-    expect(fs.readFileSync(settingsFile, 'utf-8')).toEqual(auth.generate(id, username, password));
++    expect(fs.readFileSync(settingsFile, 'utf-8')).toEqual(auth.generate([id], username, password));
+   }, 100000);
+ 
+   it('does not overwrite existing settings.xml files', async () => {
+@@ -110,7 +125,7 @@ describe('auth tests', () => {
+     expect(fs.existsSync(m2Dir)).toBe(true);
+     expect(fs.existsSync(settingsFile)).toBe(true);
+ 
+-    await auth.createAuthenticationSettings(id, username, password, m2Dir, false);
++    await auth.createAuthenticationSettings([id], username, password, m2Dir, false);
+ 
+     expect(fs.existsSync(m2Dir)).toBe(true);
+     expect(fs.existsSync(settingsFile)).toBe(true);
+@@ -134,7 +149,7 @@ describe('auth tests', () => {
+   </servers>
+ </settings>`;
+ 
+-    expect(auth.generate(id, username, password)).toEqual(expectedSettings);
++    expect(auth.generate([id], username, password)).toEqual(expectedSettings);
+   });
+ 
+   it('generates valid settings.xml with additional configuration', () => {
+@@ -159,6 +174,6 @@ describe('auth tests', () => {
+   </servers>
+ </settings>`;
+ 
+-    expect(auth.generate(id, username, password, gpgPassphrase)).toEqual(expectedSettings);
++    expect(auth.generate([id], username, password, gpgPassphrase)).toEqual(expectedSettings);
+   });
+ });
+diff --git a/action.yml b/action.yml
+index 2c0f7aba3..c13ce3c26 100644
+--- a/action.yml
++++ b/action.yml
+@@ -1,4 +1,4 @@
+-name: 'Setup Java JDK'
++name: 'Setup Java JDK (w/ server-id-list)'
+ description: 'Set up a specific version of the Java JDK and add the
+    command-line tools to the PATH'
+ author: 'GitHub'
+@@ -29,6 +29,10 @@ inputs:
+        file. Default is `github`'
+     required: false
+     default: 'github'
++  server-id-list:
++    description: 'IDs of the repositories in the pom.xml file (separated by comma).'
++    required: false
++    default: ''
+   server-username:
+     description: 'Environment variable name for the username for authentication
+        to the Apache Maven repository. Default is $GITHUB_ACTOR'
+diff --git a/src/auth.ts b/src/auth.ts
+index f697ddcd7..356e9f0cb 100644
+--- a/src/auth.ts
++++ b/src/auth.ts
+@@ -12,6 +12,11 @@ import { getBooleanInput } from './util';
+ 
+ export async function configureAuthentication() {
+   const id = core.getInput(constants.INPUT_SERVER_ID);
++  const idList = core
++    .getInput(constants.INPUT_SERVER_ID_LIST)
++    .split(',')
++    .map(id => id.trim())
++    .filter(id => !!id.length);
+   const username = core.getInput(constants.INPUT_SERVER_USERNAME);
+   const password = core.getInput(constants.INPUT_SERVER_PASSWORD);
+   const settingsDirectory =
+@@ -28,7 +33,7 @@ export async function configureAuthentication() {
+   }
+ 
+   await createAuthenticationSettings(
+-    id,
++    idList.length ? idList : [id],
+     username,
+     password,
+     settingsDirectory,
+@@ -44,27 +49,27 @@ export async function configureAuthentication() {
+ }
+ 
+ export async function createAuthenticationSettings(
+-  id: string,
++  idList: string[],
+   username: string,
+   password: string,
+   settingsDirectory: string,
+   overwriteSettings: boolean,
+   gpgPassphrase: string | undefined = undefined
+ ) {
+-  core.info(`Creating ${constants.MVN_SETTINGS_FILE} with server-id: ${id}`);
++  core.info(`Creating ${constants.MVN_SETTINGS_FILE} with server-id: ${idList.join(', ')}`);
+   // when an alternate m2 location is specified use only that location (no .m2 directory)
+   // otherwise use the home/.m2/ path
+   await io.mkdirP(settingsDirectory);
+   await write(
+     settingsDirectory,
+-    generate(id, username, password, gpgPassphrase),
++    generate(idList, username, password, gpgPassphrase),
+     overwriteSettings
+   );
+ }
+ 
+ // only exported for testing purposes
+ export function generate(
+-  id: string,
++  idList: string[],
+   username: string,
+   password: string,
+   gpgPassphrase?: string | undefined
+@@ -76,13 +81,17 @@ export function generate(
+       '@xsi:schemaLocation':
+         'http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd',
+       servers: {
+-        server: [
+-          {
+-            id: id,
+-            username: `\${env.${username}}`,
+-            password: `\${env.${password}}`
+-          }
+-        ]
++        server: idList.map(rawId => {
++          const rawIdParts = rawId.split(':');
++          const serverId = rawIdParts[0];
++          const serverUsername = rawIdParts[1] || username;
++          const serverPassword = rawIdParts[2] || password;
++          return ({
++            id: serverId,
++            username: `\${env.${serverUsername}}`,
++            password: `\${env.${serverPassword}}`,
++          });
++        })
+       }
+     }
+   };
+diff --git a/src/constants.ts b/src/constants.ts
+index 9aa213fa9..2a871b828 100644
+--- a/src/constants.ts
++++ b/src/constants.ts
+@@ -7,6 +7,7 @@ export const INPUT_DISTRIBUTION = 'distribution';
+ export const INPUT_JDK_FILE = 'jdkFile';
+ export const INPUT_CHECK_LATEST = 'check-latest';
+ export const INPUT_SERVER_ID = 'server-id';
++export const INPUT_SERVER_ID_LIST = 'server-id-list';
+ export const INPUT_SERVER_USERNAME = 'server-username';
+ export const INPUT_SERVER_PASSWORD = 'server-password';
+ export const INPUT_SETTINGS_PATH = 'settings-path';
+
+From 5665a9401b35c5312c92b72a076714517edd7ba9 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Thu, 18 Nov 2021 21:25:44 +0100
+Subject: [PATCH 2/3] Add GITHUB_WORKFLOW to the cache key (or a custom string
+ using SETUP_JAVA_CACHE_KEY)
+
+---
+ src/cache.ts | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/cache.ts b/src/cache.ts
+index 20b553e82..047aa3eab 100644
+--- a/src/cache.ts
++++ b/src/cache.ts
+@@ -10,7 +10,7 @@ import * as glob from '@actions/glob';
+ 
+ const STATE_CACHE_PRIMARY_KEY = 'cache-primary-key';
+ const CACHE_MATCHED_KEY = 'cache-matched-key';
+-const CACHE_KEY_PREFIX = 'setup-java';
++const CACHE_KEY_PREFIX = 'setup-java-' + (process.env['SETUP_JAVA_CACHE_KEY'] || process.env['GITHUB_WORKFLOW']);
+ 
+ interface PackageManager {
+   id: 'maven' | 'gradle' | 'sbt';
+
+From d0312a84f0933db42b8c93d94345fe2c6dbc1f8f Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sun, 5 Feb 2023 21:26:20 +0100
+Subject: [PATCH 3/3] Rebuild
+
+---
+ dist/cleanup/index.js |  5 +++--
+ dist/setup/index.js   | 38 ++++++++++++++++++++++++--------------
+ 2 files changed, 27 insertions(+), 16 deletions(-)
+
+diff --git a/dist/cleanup/index.js b/dist/cleanup/index.js
+index 7a4f37bde..d682db5ec 100644
+--- a/dist/cleanup/index.js
++++ b/dist/cleanup/index.js
+@@ -68232,7 +68232,7 @@ const core = __importStar(__nccwpck_require__(2186));
+ const glob = __importStar(__nccwpck_require__(8090));
+ const STATE_CACHE_PRIMARY_KEY = 'cache-primary-key';
+ const CACHE_MATCHED_KEY = 'cache-matched-key';
+-const CACHE_KEY_PREFIX = 'setup-java';
++const CACHE_KEY_PREFIX = 'setup-java-' + (process.env['SETUP_JAVA_CACHE_KEY'] || process.env['GITHUB_WORKFLOW']);
+ const supportedPackageManager = [
+     {
+         id: 'maven',
+@@ -68480,7 +68480,7 @@ else {
+ "use strict";
+ 
+ Object.defineProperty(exports, "__esModule", ({ value: true }));
+-exports.DISTRIBUTIONS_ONLY_MAJOR_VERSION = exports.INPUT_MVN_TOOLCHAIN_VENDOR = exports.INPUT_MVN_TOOLCHAIN_ID = exports.MVN_TOOLCHAINS_FILE = exports.MVN_SETTINGS_FILE = exports.M2_DIR = exports.STATE_GPG_PRIVATE_KEY_FINGERPRINT = exports.INPUT_JOB_STATUS = exports.INPUT_CACHE = exports.INPUT_DEFAULT_GPG_PASSPHRASE = exports.INPUT_DEFAULT_GPG_PRIVATE_KEY = exports.INPUT_GPG_PASSPHRASE = exports.INPUT_GPG_PRIVATE_KEY = exports.INPUT_OVERWRITE_SETTINGS = exports.INPUT_SETTINGS_PATH = exports.INPUT_SERVER_PASSWORD = exports.INPUT_SERVER_USERNAME = exports.INPUT_SERVER_ID = exports.INPUT_CHECK_LATEST = exports.INPUT_JDK_FILE = exports.INPUT_DISTRIBUTION = exports.INPUT_JAVA_PACKAGE = exports.INPUT_ARCHITECTURE = exports.INPUT_JAVA_VERSION_FILE = exports.INPUT_JAVA_VERSION = exports.MACOS_JAVA_CONTENT_POSTFIX = void 0;
++exports.DISTRIBUTIONS_ONLY_MAJOR_VERSION = exports.INPUT_MVN_TOOLCHAIN_VENDOR = exports.INPUT_MVN_TOOLCHAIN_ID = exports.MVN_TOOLCHAINS_FILE = exports.MVN_SETTINGS_FILE = exports.M2_DIR = exports.STATE_GPG_PRIVATE_KEY_FINGERPRINT = exports.INPUT_JOB_STATUS = exports.INPUT_CACHE = exports.INPUT_DEFAULT_GPG_PASSPHRASE = exports.INPUT_DEFAULT_GPG_PRIVATE_KEY = exports.INPUT_GPG_PASSPHRASE = exports.INPUT_GPG_PRIVATE_KEY = exports.INPUT_OVERWRITE_SETTINGS = exports.INPUT_SETTINGS_PATH = exports.INPUT_SERVER_PASSWORD = exports.INPUT_SERVER_USERNAME = exports.INPUT_SERVER_ID_LIST = exports.INPUT_SERVER_ID = exports.INPUT_CHECK_LATEST = exports.INPUT_JDK_FILE = exports.INPUT_DISTRIBUTION = exports.INPUT_JAVA_PACKAGE = exports.INPUT_ARCHITECTURE = exports.INPUT_JAVA_VERSION_FILE = exports.INPUT_JAVA_VERSION = exports.MACOS_JAVA_CONTENT_POSTFIX = void 0;
+ exports.MACOS_JAVA_CONTENT_POSTFIX = 'Contents/Home';
+ exports.INPUT_JAVA_VERSION = 'java-version';
+ exports.INPUT_JAVA_VERSION_FILE = 'java-version-file';
+@@ -68490,6 +68490,7 @@ exports.INPUT_DISTRIBUTION = 'distribution';
+ exports.INPUT_JDK_FILE = 'jdkFile';
+ exports.INPUT_CHECK_LATEST = 'check-latest';
+ exports.INPUT_SERVER_ID = 'server-id';
++exports.INPUT_SERVER_ID_LIST = 'server-id-list';
+ exports.INPUT_SERVER_USERNAME = 'server-username';
+ exports.INPUT_SERVER_PASSWORD = 'server-password';
+ exports.INPUT_SETTINGS_PATH = 'settings-path';
+diff --git a/dist/setup/index.js b/dist/setup/index.js
+index 3b8eb7455..4cb38214f 100644
+--- a/dist/setup/index.js
++++ b/dist/setup/index.js
+@@ -103302,6 +103302,11 @@ const util_1 = __nccwpck_require__(2629);
+ function configureAuthentication() {
+     return __awaiter(this, void 0, void 0, function* () {
+         const id = core.getInput(constants.INPUT_SERVER_ID);
++        const idList = core
++            .getInput(constants.INPUT_SERVER_ID_LIST)
++            .split(',')
++            .map(id => id.trim())
++            .filter(id => !!id.length);
+         const username = core.getInput(constants.INPUT_SERVER_USERNAME);
+         const password = core.getInput(constants.INPUT_SERVER_PASSWORD);
+         const settingsDirectory = core.getInput(constants.INPUT_SETTINGS_PATH) || path.join(os.homedir(), constants.M2_DIR);
+@@ -103312,7 +103317,7 @@ function configureAuthentication() {
+         if (gpgPrivateKey) {
+             core.setSecret(gpgPrivateKey);
+         }
+-        yield createAuthenticationSettings(id, username, password, settingsDirectory, overwriteSettings, gpgPassphrase);
++        yield createAuthenticationSettings(idList.length ? idList : [id], username, password, settingsDirectory, overwriteSettings, gpgPassphrase);
+         if (gpgPrivateKey) {
+             core.info('Importing private gpg key');
+             const keyFingerprint = (yield gpg.importKey(gpgPrivateKey)) || '';
+@@ -103321,31 +103326,35 @@ function configureAuthentication() {
+     });
+ }
+ exports.configureAuthentication = configureAuthentication;
+-function createAuthenticationSettings(id, username, password, settingsDirectory, overwriteSettings, gpgPassphrase = undefined) {
++function createAuthenticationSettings(idList, username, password, settingsDirectory, overwriteSettings, gpgPassphrase = undefined) {
+     return __awaiter(this, void 0, void 0, function* () {
+-        core.info(`Creating ${constants.MVN_SETTINGS_FILE} with server-id: ${id}`);
++        core.info(`Creating ${constants.MVN_SETTINGS_FILE} with server-id: ${idList.join(', ')}`);
+         // when an alternate m2 location is specified use only that location (no .m2 directory)
+         // otherwise use the home/.m2/ path
+         yield io.mkdirP(settingsDirectory);
+-        yield write(settingsDirectory, generate(id, username, password, gpgPassphrase), overwriteSettings);
++        yield write(settingsDirectory, generate(idList, username, password, gpgPassphrase), overwriteSettings);
+     });
+ }
+ exports.createAuthenticationSettings = createAuthenticationSettings;
+ // only exported for testing purposes
+-function generate(id, username, password, gpgPassphrase) {
++function generate(idList, username, password, gpgPassphrase) {
+     const xmlObj = {
+         settings: {
+             '@xmlns': 'http://maven.apache.org/SETTINGS/1.0.0',
+             '@xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+             '@xsi:schemaLocation': 'http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd',
+             servers: {
+-                server: [
+-                    {
+-                        id: id,
+-                        username: `\${env.${username}}`,
+-                        password: `\${env.${password}}`
+-                    }
+-                ]
++                server: idList.map(rawId => {
++                    const rawIdParts = rawId.split(':');
++                    const serverId = rawIdParts[0];
++                    const serverUsername = rawIdParts[1] || username;
++                    const serverPassword = rawIdParts[2] || password;
++                    return ({
++                        id: serverId,
++                        username: `\${env.${serverUsername}}`,
++                        password: `\${env.${serverPassword}}`,
++                    });
++                })
+             }
+         }
+     };
+@@ -103435,7 +103444,7 @@ const core = __importStar(__nccwpck_require__(2186));
+ const glob = __importStar(__nccwpck_require__(8090));
+ const STATE_CACHE_PRIMARY_KEY = 'cache-primary-key';
+ const CACHE_MATCHED_KEY = 'cache-matched-key';
+-const CACHE_KEY_PREFIX = 'setup-java';
++const CACHE_KEY_PREFIX = 'setup-java-' + (process.env['SETUP_JAVA_CACHE_KEY'] || process.env['GITHUB_WORKFLOW']);
+ const supportedPackageManager = [
+     {
+         id: 'maven',
+@@ -103582,7 +103591,7 @@ function isProbablyGradleDaemonProblem(packageManager, error) {
+ "use strict";
+ 
+ Object.defineProperty(exports, "__esModule", ({ value: true }));
+-exports.DISTRIBUTIONS_ONLY_MAJOR_VERSION = exports.INPUT_MVN_TOOLCHAIN_VENDOR = exports.INPUT_MVN_TOOLCHAIN_ID = exports.MVN_TOOLCHAINS_FILE = exports.MVN_SETTINGS_FILE = exports.M2_DIR = exports.STATE_GPG_PRIVATE_KEY_FINGERPRINT = exports.INPUT_JOB_STATUS = exports.INPUT_CACHE = exports.INPUT_DEFAULT_GPG_PASSPHRASE = exports.INPUT_DEFAULT_GPG_PRIVATE_KEY = exports.INPUT_GPG_PASSPHRASE = exports.INPUT_GPG_PRIVATE_KEY = exports.INPUT_OVERWRITE_SETTINGS = exports.INPUT_SETTINGS_PATH = exports.INPUT_SERVER_PASSWORD = exports.INPUT_SERVER_USERNAME = exports.INPUT_SERVER_ID = exports.INPUT_CHECK_LATEST = exports.INPUT_JDK_FILE = exports.INPUT_DISTRIBUTION = exports.INPUT_JAVA_PACKAGE = exports.INPUT_ARCHITECTURE = exports.INPUT_JAVA_VERSION_FILE = exports.INPUT_JAVA_VERSION = exports.MACOS_JAVA_CONTENT_POSTFIX = void 0;
++exports.DISTRIBUTIONS_ONLY_MAJOR_VERSION = exports.INPUT_MVN_TOOLCHAIN_VENDOR = exports.INPUT_MVN_TOOLCHAIN_ID = exports.MVN_TOOLCHAINS_FILE = exports.MVN_SETTINGS_FILE = exports.M2_DIR = exports.STATE_GPG_PRIVATE_KEY_FINGERPRINT = exports.INPUT_JOB_STATUS = exports.INPUT_CACHE = exports.INPUT_DEFAULT_GPG_PASSPHRASE = exports.INPUT_DEFAULT_GPG_PRIVATE_KEY = exports.INPUT_GPG_PASSPHRASE = exports.INPUT_GPG_PRIVATE_KEY = exports.INPUT_OVERWRITE_SETTINGS = exports.INPUT_SETTINGS_PATH = exports.INPUT_SERVER_PASSWORD = exports.INPUT_SERVER_USERNAME = exports.INPUT_SERVER_ID_LIST = exports.INPUT_SERVER_ID = exports.INPUT_CHECK_LATEST = exports.INPUT_JDK_FILE = exports.INPUT_DISTRIBUTION = exports.INPUT_JAVA_PACKAGE = exports.INPUT_ARCHITECTURE = exports.INPUT_JAVA_VERSION_FILE = exports.INPUT_JAVA_VERSION = exports.MACOS_JAVA_CONTENT_POSTFIX = void 0;
+ exports.MACOS_JAVA_CONTENT_POSTFIX = 'Contents/Home';
+ exports.INPUT_JAVA_VERSION = 'java-version';
+ exports.INPUT_JAVA_VERSION_FILE = 'java-version-file';
+@@ -103592,6 +103601,7 @@ exports.INPUT_DISTRIBUTION = 'distribution';
+ exports.INPUT_JDK_FILE = 'jdkFile';
+ exports.INPUT_CHECK_LATEST = 'check-latest';
+ exports.INPUT_SERVER_ID = 'server-id';
++exports.INPUT_SERVER_ID_LIST = 'server-id-list';
+ exports.INPUT_SERVER_USERNAME = 'server-username';
+ exports.INPUT_SERVER_PASSWORD = 'server-password';
+ exports.INPUT_SETTINGS_PATH = 'settings-path';

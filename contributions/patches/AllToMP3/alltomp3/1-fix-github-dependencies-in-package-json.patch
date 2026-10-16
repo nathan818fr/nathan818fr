@@ -1,0 +1,22 @@
+From e14893b22597e362cec34a86818defc49cdc2b15 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Thu, 3 Mar 2016 16:13:43 +0100
+Subject: [PATCH] Fix github dependencies in package.json
+
+---
+ package.json | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/package.json b/package.json
+index cbc2649..d62c9f7 100644
+--- a/package.json
++++ b/package.json
+@@ -32,7 +32,7 @@
+     "acoustid": "^1.2.1",
+     "bluebird": "^3.3.3",
+     "cheerio": "^0.20.0",
+-    "eyed3": "https://github.com/AllToMP3/node-eyed3",
++    "eyed3": "git+https://github.com/AllToMP3/node-eyed3",
+     "fast-levenshtein": "^1.1.3",
+     "fluent-ffmpeg": "^2.0.1",
+     "lodash": "^4.5.0",

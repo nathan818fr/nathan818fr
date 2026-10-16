@@ -1,0 +1,82 @@
+From 5d78fbe4bc3bbcfc215781fdae186b10c847c21e Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Sun, 8 Sep 2019 00:20:27 +0200
+Subject: [PATCH] Allow RETURNING in INSERT and DELETE clauses with MariaDB
+
+---
+ .../java/org/jooq/DeleteReturningStep.java     |  3 ++-
+ .../java/org/jooq/impl/AbstractDMLQuery.java   | 18 +++++++++++++++++-
+ 2 files changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/jOOQ/src/main/java/org/jooq/DeleteReturningStep.java b/jOOQ/src/main/java/org/jooq/DeleteReturningStep.java
+index d60e0dc673b..00fb839ccdc 100644
+--- a/jOOQ/src/main/java/org/jooq/DeleteReturningStep.java
++++ b/jOOQ/src/main/java/org/jooq/DeleteReturningStep.java
+@@ -41,6 +41,7 @@
+ // ...
+ import static org.jooq.SQLDialect.FIREBIRD;
+ // ...
++import static org.jooq.SQLDialect.MARIADB;
+ import static org.jooq.SQLDialect.POSTGRES;
+ // ...
+ 
+@@ -113,7 +114,7 @@ public interface DeleteReturningStep<R extends Record> extends DeleteFinalStep<R
+      * @param fields Fields to be returned
+      * @see DeleteResultStep
+      */
+-    @Support({ FIREBIRD, POSTGRES })
++    @Support({ MARIADB, FIREBIRD, POSTGRES })
+     DeleteResultStep<R> returning(SelectFieldOrAsterisk... fields);
+ 
+     /**
+diff --git a/jOOQ/src/main/java/org/jooq/impl/AbstractDMLQuery.java b/jOOQ/src/main/java/org/jooq/impl/AbstractDMLQuery.java
+index 67bbc41abf4..f74ceeee395 100644
+--- a/jOOQ/src/main/java/org/jooq/impl/AbstractDMLQuery.java
++++ b/jOOQ/src/main/java/org/jooq/impl/AbstractDMLQuery.java
+@@ -102,10 +102,12 @@
+ import org.jooq.DSLContext;
+ import org.jooq.DataType;
+ import org.jooq.Delete;
++import org.jooq.DeleteQuery;
+ import org.jooq.ExecuteContext;
+ import org.jooq.ExecuteListener;
+ import org.jooq.Field;
+ import org.jooq.Identity;
++import org.jooq.InsertQuery;
+ import org.jooq.Name;
+ import org.jooq.Param;
+ // ...
+@@ -726,6 +728,11 @@ final void toSQLReturning(Context<?> ctx) {
+ 
+ 
+ 
++                case MARIADB:
++                    // MariaDB support RETURNING on INSERT and DELETE clauses
++                    if (!(this instanceof InsertQuery) && !(this instanceof DeleteQuery)) {
++                        break;
++                    }
+                 case FIREBIRD:
+                 case POSTGRES: {
+                     boolean previous = ctx.declareFields();
+@@ -954,11 +961,20 @@ protected final int execute(ExecuteContext ctx, ExecuteListener listener) throws
+ 
+                 case DERBY:
+                 case H2:
+-                case MARIADB:
+                 case MYSQL: {
+                     return executeReturningGeneratedKeysFetchAdditionalRows(ctx, listener);
+                 }
+ 
++                // MariaDB support RETURNING on INSERT and DELETE clauses
++                case MARIADB: {
++                    if (!(this instanceof InsertQuery) && !(this instanceof DeleteQuery)) {
++                        return executeReturningGeneratedKeysFetchAdditionalRows(ctx, listener);
++                    } else {
++                        rs = executeReturningQuery(ctx, listener);
++                    }
++                    break;
++                }
++
+ 
+ 
+ 

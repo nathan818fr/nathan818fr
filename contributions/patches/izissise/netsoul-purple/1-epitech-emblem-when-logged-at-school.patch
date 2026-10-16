@@ -1,0 +1,212 @@
+From fe23473b5eedfc7934c53bcbd3994841db747ca8 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 3 Dec 2014 14:15:11 +0100
+Subject: [PATCH 1/5] Add epitech logo
+
+---
+ pixmaps/16/epitech.png | Bin 0 -> 246 bytes
+ pixmaps/Makefile.am    |   5 ++++-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+ create mode 100644 pixmaps/16/epitech.png
+
+diff --git a/pixmaps/16/epitech.png b/pixmaps/16/epitech.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..24de9940f5df4aaa17f524629f599716630e4c43
+GIT binary patch
+literal 246
+zcmeAS@N?(olHy`uVBq!ia0vp^0wB!61|;P_|4#%`Y)RhkE)4%caKYZ?lYt_f1s;*b
+z3=G`DAk4@xYmNj^kiEpy*OmPqx45vhwyVf8YoJiGr;B5V#p&dP2F9bB|0O$EC9*s(
+z_AG1fZ1g#xc;KMJL`H)HPFw8XKQ~AUKGqU!%zkEVK+kp76Uz?g?CZPhR&v0@qU%G2
+zW8ta#E@r{YVL&rFJ;i0(y#FWnxBj;5iQsMQJiPa_tiR43bv=fU%b9c95(F1p2%I!~
+jaJ*ff=gD&qm8}d?#rhwXGjH<)I)}m2)z4*}Q$iB}uI5%R
+
+literal 0
+HcmV?d00001
+
+diff --git a/pixmaps/Makefile.am b/pixmaps/Makefile.am
+index 52984b7..32b452b 100644
+--- a/pixmaps/Makefile.am
++++ b/pixmaps/Makefile.am
+@@ -1,11 +1,14 @@
+ EXTRA_DIST = 	16/netsoul.png	\
+ 		22/netsoul.png	\
+-		48/netsoul.png
++		48/netsoul.png	\
++		16/epitech.png
+ 
+ pidginprotocolpix16dir = $(datadir)/pixmaps/pidgin/protocols/16
+ pidginprotocolpix22dir = $(datadir)/pixmaps/pidgin/protocols/22
+ pidginprotocolpix48dir = $(datadir)/pixmaps/pidgin/protocols/48
++pidginepitechpix16dir  = $(datadir)/pixmaps/pidgin/emblems/16
+ 
+ pidginprotocolpix16_DATA = 16/netsoul.png
+ pidginprotocolpix22_DATA = 22/netsoul.png
+ pidginprotocolpix48_DATA = 48/netsoul.png
++pidginepitechpix16_DATA  = 16/epitech.png
+
+From 4d23543b6eb1a67c17f7aa6a61eaed81ccb47484 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Wed, 3 Dec 2014 14:23:48 +0100
+Subject: [PATCH 2/5] epitech emblem when logged at school
+
+---
+ src/netsoul.c | 22 ++++++++++++----------
+ 1 file changed, 12 insertions(+), 10 deletions(-)
+
+diff --git a/src/netsoul.c b/src/netsoul.c
+index 7680f81..95b6d40 100644
+--- a/src/netsoul.c
++++ b/src/netsoul.c
+@@ -449,6 +449,7 @@ static void netsoul_remove_buddy (PurpleConnection *gc, PurpleBuddy *buddy, Purp
+   }
+   g_list_free(nb->locationlist);
+   g_free(nb);
++  buddy->proto_data = NULL;
+ }
+ 
+ /*
+@@ -531,19 +532,20 @@ static void netsoul_get_info(PurpleConnection *gc, const char *who)
+ static const char* netsoul_list_emblems(PurpleBuddy *buddy)
+ {
+   NetsoulBuddy	*nb = buddy->proto_data;
++  NetsoulConn	*nc;
++  GList		*tmp;
+ 
+   if (!nb)
+-    return "";
++    return NULL;
+   purple_debug_info("netsoul", "list_emblems %s\n", nb->login);
+-  if ((nb->state == NS_STATE_AWAY) || (nb->state == NS_STATE_IDLE))
+-    return "away";
+-  if (nb->state == NS_STATE_SEVERAL_INACTIF)
+-    return "extendedaway";
+-  if ((nb->state == NS_STATE_SERVER) || (nb->state == NS_STATE_LOCK))
+-    return "secure";
+-  if ((nb->state == NS_STATE_SEVERAL_ACTIF) || (nb->state == NS_STATE_ACTIF_MORE))
+-    return "activebuddy";
+-  return "";
++  for (tmp = nb->locationlist; tmp; tmp = tmp->next)
++    {
++      nc = tmp->data;
++      if (nc && nc->ip &&
++	  nc->ip[0] == '1' && nc->ip[1] == '0' && nc->ip[2] == '.')
++	return "epitech";
++    }
++  return NULL;
+ }
+ 
+ /*
+
+From fe18fe587e3d3b380c41c8a092393c957e680c41 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 5 Dec 2014 17:51:33 +0100
+Subject: [PATCH 3/5] add epitech inactive logo
+
+---
+ pixmaps/16/epitech_inactive.png | Bin 0 -> 236 bytes
+ pixmaps/Makefile.am             |  27 +++++++++++++++------------
+ 2 files changed, 15 insertions(+), 12 deletions(-)
+ create mode 100644 pixmaps/16/epitech_inactive.png
+
+diff --git a/pixmaps/16/epitech_inactive.png b/pixmaps/16/epitech_inactive.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..6865ceb626eedf7641a1cb5c021a2c1d9ea0a612
+GIT binary patch
+literal 236
+zcmeAS@N?(olHy`uVBq!ia0vp^0wB!61|;P_|4#%`Y)RhkE)4%caKYZ?lYt_f1s;*b
+z3=G`DAk4@xYmNj^kiEpy*OmPq537KY?jrZZ9YCQ<PZ!4!i_=Sk9Qh6?a5!&n&VS8Z
+zqm}<S;gFuPVVCsfc|4iiVjXe}0bEIs{t5Qa@|mr%^uol(hh6_B&zyYx^uh`I)Lz{6
+z-Sf&q$#r*i8^afiBP+ETdQ$?jL(93(%&`$(eS7!TZTFl^4qUhX;IrpeVaIJYrA_s<
+bw%^%4=h`Z)-cfKG=m-W+S3j3^P6<r_dT&(L
+
+literal 0
+HcmV?d00001
+
+diff --git a/pixmaps/Makefile.am b/pixmaps/Makefile.am
+index 32b452b..5635ab5 100644
+--- a/pixmaps/Makefile.am
++++ b/pixmaps/Makefile.am
+@@ -1,14 +1,17 @@
+-EXTRA_DIST = 	16/netsoul.png	\
+-		22/netsoul.png	\
+-		48/netsoul.png	\
+-		16/epitech.png
++EXTRA_DIST = 	16/netsoul.png		\
++		22/netsoul.png		\
++		48/netsoul.png		\
++		16/epitech.png		\
++		16/epitech_inactive.png
+ 
+-pidginprotocolpix16dir = $(datadir)/pixmaps/pidgin/protocols/16
+-pidginprotocolpix22dir = $(datadir)/pixmaps/pidgin/protocols/22
+-pidginprotocolpix48dir = $(datadir)/pixmaps/pidgin/protocols/48
+-pidginepitechpix16dir  = $(datadir)/pixmaps/pidgin/emblems/16
++pidginprotocolpix16dir		= $(datadir)/pixmaps/pidgin/protocols/16
++pidginprotocolpix22dir		= $(datadir)/pixmaps/pidgin/protocols/22
++pidginprotocolpix48dir		= $(datadir)/pixmaps/pidgin/protocols/48
++pidginepitechpix16dir		= $(datadir)/pixmaps/pidgin/emblems/16
++pidginepitechinactivepix16dir	= $(datadir)/pixmaps/pidgin/emblems/16
+ 
+-pidginprotocolpix16_DATA = 16/netsoul.png
+-pidginprotocolpix22_DATA = 22/netsoul.png
+-pidginprotocolpix48_DATA = 48/netsoul.png
+-pidginepitechpix16_DATA  = 16/epitech.png
++pidginprotocolpix16_DATA	= 16/netsoul.png
++pidginprotocolpix22_DATA	= 22/netsoul.png
++pidginprotocolpix48_DATA	= 48/netsoul.png
++pidginepitechpix16_DATA		= 16/epitech.png
++pidginepitechinactivepix16_DATA	= 16/epitech_inactive.png
+
+From 7362ba3f18bc31a744771a63d3991ae5b347e75b Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 5 Dec 2014 17:56:40 +0100
+Subject: [PATCH 4/5] epitech inactive emblem when away/lock
+
+---
+ src/netsoul.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/netsoul.c b/src/netsoul.c
+index 95b6d40..d3270c6 100644
+--- a/src/netsoul.c
++++ b/src/netsoul.c
+@@ -543,7 +543,13 @@ static const char* netsoul_list_emblems(PurpleBuddy *buddy)
+       nc = tmp->data;
+       if (nc && nc->ip &&
+ 	  nc->ip[0] == '1' && nc->ip[1] == '0' && nc->ip[2] == '.')
+-	return "epitech";
++	{
++	  if ((nb->state == NS_STATE_AWAY) || (nb->state == NS_STATE_IDLE) ||
++	      (nb->state == NS_STATE_SERVER) || (nb->state == NS_STATE_LOCK) ||
++	      (nb->state == NS_STATE_SEVERAL_INACTIF))
++	    return "epitech_inactive";
++	  return "epitech";
++	}
+     }
+   return NULL;
+ }
+
+From f57e09ed89afa12940010b84e04b5c562ab26127 Mon Sep 17 00:00:00 2001
+From: Nathan Poirier <nathan@poirier.io>
+Date: Fri, 5 Dec 2014 18:00:33 +0100
+Subject: [PATCH 5/5] change epitech inactive logo opacity to 50%
+
+---
+ pixmaps/16/epitech_inactive.png | Bin 236 -> 238 bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/pixmaps/16/epitech_inactive.png b/pixmaps/16/epitech_inactive.png
+index 6865ceb626eedf7641a1cb5c021a2c1d9ea0a612..4abddb3ad715c3f97c962b5f94f997bb854cbff7 100644
+GIT binary patch
+delta 161
+zcmV;S0ABy>0qy~iRew7ZvgF5F0001cNkl<ZILoC{K@Pwm2xG>BZ|ej64)IgG&4Y(s
+zMq(5<rac+b7Az1w0KnwL#Qh^4HGwvfQlcXRMfCntM2f`=u8_Va=-pMk>Nw)^cDD=x
+z@NtM!R{-qEAm_~H7DS|2CR*2bYi+#+Z-B3NV3}C8;}EwEY8tKk*Vl7z7*{zUje+=6
+P00000NkvXXu0mjfa@j{*
+
+delta 159
+zcmV;Q0AT;_0qg;gRev%qqDNu40001aNkl<ZILoC{K@Pwm2t%`jZ|ehmDsSUp!Y(5*
+ziW}3O3~37%h#mk?3S#2^5s#Won<%Bwk%8fg{*#%L$IGFRz9#71O}y$jB1OA<h5+<9
+z#HlL)jbu=3Rd)-_oIDe&+q<>4-a<6M*E{e`yxMVy+Xf=Ce;9o|_XhKAJs_*NaLWJy
+N002ovPDHLkV1i)4Mr!~7
+
