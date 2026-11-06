@@ -8,6 +8,7 @@
 github_colors:
   C: "#555555"
   C++: "#f34b7d"
+  Go: "#00ADD8"
   Java: "#b07219"
   JavaScript: "#f1e05a"
   PHP: "#4F5D95"
@@ -33,8 +34,8 @@ projects:
         languages: [TypeScript]
       - name: fake-minecraft-server
         url: https://github.com/nathan818fr/fake-minecraft-server
-        description: A Minecraft server that only answers server list requests, made to keep FunCraft.net listed after it closed
-        languages: [JavaScript]
+        description: A Minecraft server that only answers the server list and kicks players with a message, first made to keep FunCraft.net listed after it closed
+        languages: [Go]
       - name: jetbrains-launcher
         url: https://github.com/nathan818fr/jetbrains-launcher
         description: Command-line launcher for JetBrains IDEs that keeps .idea out of your project

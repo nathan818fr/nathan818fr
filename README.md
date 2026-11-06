@@ -12,8 +12,8 @@ Most of what I know about running things at scale comes from FunCraft.net, the F
   vcvarsall.bat for Bash: use MSVC from Git Bash, MSYS2, Cygwin and WSL
 - **[java-props](https://github.com/nathan818fr/node-java-props)** <picture><img src=".assets/languages/typescript.svg" width="78" height="16" align="absmiddle" alt="TypeScript"></picture><br>
   Read Java .properties files in Node.js, following the Java specification
-- **[fake-minecraft-server](https://github.com/nathan818fr/fake-minecraft-server)** <picture><img src=".assets/languages/javascript.svg" width="76" height="16" align="absmiddle" alt="JavaScript"></picture><br>
-  A Minecraft server that only answers server list requests, made to keep FunCraft.net listed after it closed
+- **[fake-minecraft-server](https://github.com/nathan818fr/fake-minecraft-server)** <picture><img src=".assets/languages/go.svg" width="32" height="16" align="absmiddle" alt="Go"></picture><br>
+  A Minecraft server that only answers the server list and kicks players with a message, first made to keep FunCraft.net listed after it closed
 - **[jetbrains-launcher](https://github.com/nathan818fr/jetbrains-launcher)** <picture><img src=".assets/languages/shell.svg" width="44" height="16" align="absmiddle" alt="Shell"></picture><br>
   Command-line launcher for JetBrains IDEs that keeps .idea out of your project
 - **[ts3-server-hook](https://github.com/nathan818fr/ts3-server-hook)** <picture><img src=".assets/languages/cpp.svg" width="39" height="16" align="absmiddle" alt="C++"></picture><br>
