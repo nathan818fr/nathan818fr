@@ -36,6 +36,10 @@ projects:
         url: https://github.com/nathan818fr/fake-minecraft-server
         description: A Minecraft server that only answers the server list and kicks players with a message, first made to keep FunCraft.net listed after it closed
         languages: [Go]
+      - name: oh-my-818
+        url: https://github.com/nathan818fr/oh-my-818
+        description: "My zsh and bash setup: clear prompt with git status, better history, keys and completion"
+        languages: [Shell]
       - name: jetbrains-launcher
         url: https://github.com/nathan818fr/jetbrains-launcher
         description: Command-line launcher for JetBrains IDEs that keeps .idea out of your project

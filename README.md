@@ -14,6 +14,8 @@ Most of what I know about running things at scale comes from FunCraft.net, the F
   Read Java .properties files in Node.js, following the Java specification
 - **[fake-minecraft-server](https://github.com/nathan818fr/fake-minecraft-server)** <picture><img src=".assets/languages/go.svg" width="32" height="16" align="absmiddle" alt="Go"></picture><br>
   A Minecraft server that only answers the server list and kicks players with a message, first made to keep FunCraft.net listed after it closed
+- **[oh-my-818](https://github.com/nathan818fr/oh-my-818)** <picture><img src=".assets/languages/shell.svg" width="44" height="16" align="absmiddle" alt="Shell"></picture><br>
+  My zsh and bash setup: clear prompt with git status, better history, keys and completion
 - **[jetbrains-launcher](https://github.com/nathan818fr/jetbrains-launcher)** <picture><img src=".assets/languages/shell.svg" width="44" height="16" align="absmiddle" alt="Shell"></picture><br>
   Command-line launcher for JetBrains IDEs that keeps .idea out of your project
 - **[ts3-server-hook](https://github.com/nathan818fr/ts3-server-hook)** <picture><img src=".assets/languages/cpp.svg" width="39" height="16" align="absmiddle" alt="C++"></picture><br>
