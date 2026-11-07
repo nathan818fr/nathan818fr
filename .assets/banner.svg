@@ -43,6 +43,16 @@
     <path fill="#3a1a45" d="M0 200 V164 H32 V172 H48 V164 H64 V156 H96 V164 H128 V156 H160 V164 H192 V156 H224 V164 H256 V172 H288 V164 H304 V156 H336 V164 H352 V156 H416 V164 H448 V172 H464 V164 H480 V172 H496 V164 H512 V172 H528 V164 H544 V156 H576 V164 H592 V172 H640 V180 H672 V184 H688 V176 H704 V184 H720 V176 H736 V168 H752 V160 H768 V156 H800 V200 Z"/>
   </g>
 
+  <!-- The sunset as one strip: the 818 stands on it, so its bottom cut looks deliberate. -->
+  <rect x="0" y="194" width="100" height="6" fill="#2d1b4e"/>
+  <rect x="100" y="194" width="100" height="6" fill="#5b2a6e"/>
+  <rect x="200" y="194" width="100" height="6" fill="#9c3b6e"/>
+  <rect x="300" y="194" width="100" height="6" fill="#c04b6b"/>
+  <rect x="400" y="194" width="100" height="6" fill="#e0605e"/>
+  <rect x="500" y="194" width="100" height="6" fill="#f59a5b"/>
+  <rect x="600" y="194" width="100" height="6" fill="#fbd07a"/>
+  <rect x="700" y="194" width="100" height="6" fill="#ffe39a"/>
+
   <text class="name" x="16" y="116"><tspan class="mark">#</tspan> Nathan Poirier</text>
   <!-- One character after the name: x = 16 + 16 characters × 16.8 (a JetBrains Mono character is 0.6 em wide). -->
   <rect class="cursor" x="284.8" y="93" width="16.8" height="29"/>
